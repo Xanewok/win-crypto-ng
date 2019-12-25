@@ -79,9 +79,9 @@ pub enum RandomAlgorithmId {
     FIPS186DSARNG,
 }
 
-impl Default for RandomAlgorithmId {
+impl Default for RandomAlgorithm {
     fn default() -> Self {
-        RandomAlgorithmId::RNG
+        RandomAlgorithm::SystemPreferred
     }
 }
 
