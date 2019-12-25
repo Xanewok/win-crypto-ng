@@ -55,6 +55,10 @@ impl Buffer {
     pub fn as_slice(&self) -> &[u8] {
         self.inner.as_slice()
     }
+
+    pub fn into_inner(mut self) -> Vec<u8> {
+        std::mem::replace(&mut self.inner, Default::default())
+    }
 }
 
 impl Drop for Buffer {
