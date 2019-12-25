@@ -46,7 +46,7 @@
 
 use crate::{Error, Result};
 use crate::buffer::Buffer;
-use crate::helpers::{AlgoHandle, Handle};
+use crate::helpers::{AlgoHandle, Handle, WindowsString};
 use winapi::shared::bcrypt::*;
 use winapi::shared::minwindef::{DWORD, ULONG, PUCHAR};
 use std::convert::TryFrom;
@@ -286,6 +286,26 @@ impl Hash {
     pub fn hash_size(&self) -> Result<usize> {
         self.handle.get_property::<DWORD>(BCRYPT_HASH_LENGTH).map(|hash_size| hash_size as usize)
     }
+
+    /// Fetches the id for the hash algorithm this hash object was created with.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use win_crypto_ng::hash::{HashAlgorithm, HashAlgorithmId};
+    /// let algo = HashAlgorithm::open(HashAlgorithmId::Sha256).unwrap();
+    /// let hash = algo.new_hash().unwrap();
+    /// let algo = hash.hash_algorithm().unwrap();
+    ///
+    /// assert_eq!(algo, HashAlgorithmId::Sha256);
+    /// ```
+    pub fn hash_algorithm(&self) -> Result<HashAlgorithmId> {
+        self.handle.get_property::<[u16; 32]>(BCRYPT_ALGORITHM_NAME)
+            .map(|buf| WindowsString::from_ptr(buf.as_ptr()).to_str())
+            .and_then(|string|
+                HashAlgorithmId::try_from(string.as_str()).map_err(|_| Error::InvalidParameter)
+            )
+    }
 }
 
 #[cfg(test)]
@@ -367,10 +387,12 @@ mod tests {
         let algo = HashAlgorithm::open(algo_id).unwrap();
         let mut hash = algo.new_hash().unwrap();
         let hash_size = hash.hash_size().unwrap();
+        let hash_algorithm = hash.hash_algorithm().unwrap();
         hash.hash(data).unwrap();
         let result = hash.finish().unwrap();
 
         assert_eq!(hash_size, expected_hash.len());
         assert_eq!(result.as_slice(), expected_hash);
+        assert_eq!(hash_algorithm, algo_id);
     }
 }
