@@ -49,6 +49,7 @@ use crate::buffer::Buffer;
 use crate::helpers::{AlgoHandle, Handle};
 use winapi::shared::bcrypt::*;
 use winapi::shared::minwindef::{DWORD, ULONG, PUCHAR};
+use std::convert::TryFrom;
 use std::ptr::null_mut;
 
 /// Hashing algorithm identifiers
@@ -108,6 +109,23 @@ impl HashAlgorithmId {
             Self::Md5 => BCRYPT_MD5_ALGORITHM,
             //Self::AesCmac => BCRYPT_AES_CMAC_ALGORITHM,
             //Self::AesGmac => BCRYPT_AES_GMAC_ALGORITHM,
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for HashAlgorithmId {
+    type Error = &'a str;
+
+    fn try_from(val: &'a str) -> std::result::Result<HashAlgorithmId, &'a str> {
+        match val {
+            BCRYPT_SHA1_ALGORITHM => Ok(Self::Sha1),
+            BCRYPT_SHA256_ALGORITHM => Ok(Self::Sha256),
+            BCRYPT_SHA384_ALGORITHM => Ok(Self::Sha384),
+            BCRYPT_SHA512_ALGORITHM => Ok(Self::Sha512),
+            BCRYPT_MD2_ALGORITHM => Ok(Self::Md2),
+            BCRYPT_MD4_ALGORITHM => Ok(Self::Md4),
+            BCRYPT_MD5_ALGORITHM => Ok(Self::Md5),
+            val => Err(val),
         }
     }
 }
