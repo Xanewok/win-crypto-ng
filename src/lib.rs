@@ -2,6 +2,8 @@ use doc_comment::doctest;
 use winapi::shared::ntdef::NTSTATUS;
 use winapi::shared::ntstatus;
 
+use std::fmt;
+
 pub mod buffer;
 pub mod hash;
 pub mod symmetric;
@@ -28,6 +30,14 @@ pub enum Error {
 
     Unknown(NTSTATUS),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for Error {}
 
 impl Error {
     fn check(status: NTSTATUS) -> std::result::Result<(), Self> {
