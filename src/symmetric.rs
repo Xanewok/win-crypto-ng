@@ -335,9 +335,9 @@ impl SymmetricAlgorithmKey {
     ///     0xB4, 0x4A, 0xB8, 0xA0, 0xEA, 0x0E, 0x8F, 0x31]);
     /// ```
     pub fn encrypt(&self, iv: Option<&[u8]>, data: &[u8]) -> Result<Buffer> {
-        let mut iv_copy = iv.map(|iv| Buffer::from(iv));
-        let iv_ptr = iv_copy.as_mut().map_or(null_mut(), |iv| iv.as_mut_ptr());
-        let iv_len = iv_copy.as_ref().map_or(0, |iv| iv.len() as ULONG);
+        let mut iv = iv.map(Buffer::from);
+        let iv_ptr = iv.as_mut().map_or(null_mut(), Buffer::as_mut_ptr);
+        let iv_len = iv.as_ref().map_or(0, Buffer::len);
 
         let mut encrypted_len = MaybeUninit::<ULONG>::uninit();
         unsafe {
@@ -348,7 +348,7 @@ impl SymmetricAlgorithmKey {
                     data.len() as ULONG,
                     null_mut(),
                     iv_ptr,
-                    iv_len,
+                    iv_len as ULONG,
                     null_mut(),
                     0,
                     encrypted_len.as_mut_ptr(),
@@ -365,7 +365,7 @@ impl SymmetricAlgorithmKey {
                     data.len() as ULONG,
                     null_mut(),
                     iv_ptr,
-                    iv_len,
+                    iv_len as ULONG,
                     output.as_mut_ptr(),
                     output.len() as ULONG,
                     encrypted_len.as_mut_ptr(),
@@ -402,9 +402,9 @@ impl SymmetricAlgorithmKey {
     /// assert_eq!(&plaintext.as_slice()[..16], "THIS_IS_THE_DATA".as_bytes());
     /// ```
     pub fn decrypt(&self, iv: Option<&[u8]>, data: &[u8]) -> Result<Buffer> {
-        let mut iv_copy = iv.map(|iv| Buffer::from(iv));
-        let iv_ptr = iv_copy.as_mut().map_or(null_mut(), |iv| iv.as_mut_ptr());
-        let iv_len = iv_copy.as_ref().map_or(0, |iv| iv.len() as ULONG);
+        let mut iv = iv.map(Buffer::from);
+        let iv_ptr = iv.as_mut().map_or(null_mut(), Buffer::as_mut_ptr);
+        let iv_len = iv.as_ref().map_or(0, Buffer::len);
 
         let mut plaintext_len = MaybeUninit::<ULONG>::uninit();
         unsafe {
