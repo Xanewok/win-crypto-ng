@@ -107,7 +107,7 @@ impl WindowsString {
     }
 
     pub fn to_str(&self) -> String {
-        OsString::from_wide(&self.inner).to_string_lossy().as_ref().to_string()
+        OsString::from_wide(&self.inner).to_string_lossy().to_string()
     }
 }
 
