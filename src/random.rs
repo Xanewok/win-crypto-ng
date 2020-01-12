@@ -220,7 +220,7 @@ impl RandomOptions {
     }
 
     /// Returns the inner bitflags to be used when calling `BCryptGenRandom`.
-    fn as_bitflags(&self) -> ULONG {
+    fn as_bitflags(self) -> ULONG {
         self.0
     }
 }

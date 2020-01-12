@@ -174,7 +174,7 @@ impl OidList {
         std::iter::from_fn(move || iter.next().map(Oid::as_bytes))
     }
 
-    fn as_slice<'a>(&'a self) -> &'a [Oid<'a>] {
+    fn as_slice(&self) -> &[Oid<'_>] {
         unsafe {
             std::slice::from_raw_parts(self.0.pOIDs as *const Oid, self.0.dwOIDCount as usize)
         }
