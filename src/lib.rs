@@ -6,6 +6,7 @@ use std::fmt;
 
 pub mod buffer;
 pub mod hash;
+pub mod random;
 pub mod symmetric;
 
 mod helpers;
