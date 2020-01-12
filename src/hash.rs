@@ -45,8 +45,9 @@
 //! [`finish`]: struct.Hash.html#method.finish
 
 use crate::buffer::Buffer;
-use crate::helpers::{AlgoHandle, Handle, Tailed};
+use crate::helpers::{AlgoHandle, Handle, Tailed, WindowsString};
 use crate::{Error, Result};
+use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::ptr::null_mut;
 use winapi::shared::bcrypt::*;
@@ -109,6 +110,23 @@ impl HashAlgorithmId {
             Self::Md5 => BCRYPT_MD5_ALGORITHM,
             //Self::AesCmac => BCRYPT_AES_CMAC_ALGORITHM,
             //Self::AesGmac => BCRYPT_AES_GMAC_ALGORITHM,
+        }
+    }
+}
+
+impl<'a> std::convert::TryFrom<&'a str> for HashAlgorithmId {
+    type Error = &'a str;
+
+    fn try_from(val: &'a str) -> std::result::Result<HashAlgorithmId, Self::Error> {
+        match val {
+            BCRYPT_SHA1_ALGORITHM => Ok(Self::Sha1),
+            BCRYPT_SHA256_ALGORITHM => Ok(Self::Sha256),
+            BCRYPT_SHA384_ALGORITHM => Ok(Self::Sha384),
+            BCRYPT_SHA512_ALGORITHM => Ok(Self::Sha512),
+            BCRYPT_MD2_ALGORITHM => Ok(Self::Md2),
+            BCRYPT_MD4_ALGORITHM => Ok(Self::Md4),
+            BCRYPT_MD5_ALGORITHM => Ok(Self::Md5),
+            val => Err(val),
         }
     }
 }
@@ -349,6 +367,27 @@ impl Hash {
         self.handle
             .get_property::<DWORD>(BCRYPT_HASH_LENGTH)
             .map(|hash_size| hash_size as usize)
+    }
+
+    /// Get the hash algorithm used for this hash object.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use win_crypto_ng::hash::{HashAlgorithm, HashAlgorithmId};
+    /// let algo = HashAlgorithm::open(HashAlgorithmId::Sha256).unwrap();
+    /// let hash = algo.new_hash().unwrap();
+    ///
+    /// assert_eq!(hash.hash_algorithm().unwrap(), HashAlgorithmId::Sha256);
+    /// ```
+    pub fn hash_algorithm(&self) -> Result<HashAlgorithmId> {
+        self.handle
+            .get_property::<[u16; 16]>(BCRYPT_ALGORITHM_NAME)
+            .map(|lol| WindowsString::from_ptr(lol.as_ptr()).to_str())
+            .map(|name| {
+                HashAlgorithmId::try_from(name.as_str())
+                    .expect("Windows API to return a correct algorithm name")
+            })
     }
 }
 
