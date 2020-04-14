@@ -217,6 +217,10 @@ impl<T: ?Sized> TypedBlob<T> {
     pub fn into_inner(self) -> Box<[u8]> {
         self.into()
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.allocation
+    }
 }
 
 impl<T: Sized> core::ops::Deref for TypedBlob<T> {
