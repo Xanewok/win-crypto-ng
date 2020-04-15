@@ -145,8 +145,8 @@ impl KeyPair {
     /// let pair = KeyPair::generate(&algo, 1024).expect("key to be generated").finalize();
     ///
     /// let blob = pair.export(BlobType::DsaPublic).unwrap();
-    /// eprintln!("{:?}", blob.as_ref().Magic);
-    /// assert_eq!(blob.as_ref().Magic, winapi::shared::bcrypt::BCRYPT_DSA_PUBLIC_MAGIC);
+    /// eprintln!("{:?}", blob.Magic);
+    /// assert_eq!(blob.Magic, winapi::shared::bcrypt::BCRYPT_DSA_PUBLIC_MAGIC);
     /// assert!(blob.try_into::<DsaPublic>().is_ok());
     /// ```
     pub fn export(&self, kind: BlobType) -> Result<TypedBlob<BCRYPT_KEY_BLOB>> {
