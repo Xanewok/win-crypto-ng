@@ -174,10 +174,6 @@ impl TypedBlob<RsaPrivate> {
 }
 
 impl TypedBlob<RsaFullPrivate> {
-    pub fn as_private(&self) -> &TypedBlob<RsaPrivate> {
-        unsafe { std::mem::transmute(self) }
-    }
-
     /// Public exponent as a big-endian multiprecision integer.
     pub fn pub_exp(&self) -> &[u8] {
         <Self as private::RsaKeyBlob>::pub_exp(self)
