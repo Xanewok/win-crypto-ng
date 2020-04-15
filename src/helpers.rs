@@ -274,14 +274,11 @@ impl<T: Sized> TypedBlob<T> {
     }
 }
 
-impl<T> AsRef<[T]> for TypedBlob<[T]> {
+impl<T> core::ops::Deref for TypedBlob<[T]> {
+    type Target = [T];
     /// Creates a typed reference to the underlying data structure backed by the
     /// source bytes.
-    ///
-    /// # Panics
-    /// This function panicks if the allocation does not fit exactly a certain
-    /// count of `T`-sized values.
-    fn as_ref(&self) -> &[T] {
+    fn deref(&self) -> &[T] {
         // SAFETY: The only way to create this struct with *unsized* `T` is via
         // `TypedBlob::from_box_unsized`, where:
         // 1. the caller has to prove that the data is of correct format,
@@ -299,6 +296,20 @@ impl<T> AsRef<[T]> for TypedBlob<[T]> {
                 self.allocation.len() * std::mem::size_of::<u8>() / std::mem::size_of::<T>(),
             )
         }
+    }
+}
+
+impl<T> AsRef<[T]> for TypedBlob<[T]> {
+    /// Creates a typed reference to the underlying data structure backed by the
+    /// source bytes.
+    ///
+    /// # Panics
+    /// This function panicks if the allocation does not fit exactly a certain
+    /// count of `T`-sized values.
+    fn as_ref(&self) -> &[T] {
+        use core::ops::Deref;
+
+        self.deref().as_ref()
     }
 }
 
@@ -368,12 +379,12 @@ mod tests {
         assert_eq!(typed.first, 0x0101);
         assert_eq!(typed.second, 0x02020202);
         let typed = unsafe { TypedBlob::<[u8; 10]>::from_box(bytes.clone()) };
-        assert_eq!(&*typed, bytes.as_ref());
+        assert_eq!(&*typed, &*bytes);
 
         let typed = unsafe { TypedBlob::<[u8]>::from_box_unsized(bytes.clone()) };
-        assert_eq!(typed.as_ref(), bytes.as_ref());
+        assert_eq!(&*typed, &*bytes);
         let typed = unsafe { TypedBlob::<[u16]>::from_box_unsized(bytes.clone()) };
-        assert_eq!(typed.as_ref(), &[0x0101, 0xFFFF, 0x0202, 0x0202, 0xDEDE]);
+        assert_eq!(&*typed, &[0x0101, 0xFFFF, 0x0202, 0x0202, 0xDEDE]);
 
         assert!(std::panic::catch_unwind(|| {
             // Allocation is too small
