@@ -238,9 +238,11 @@ impl<T: Sized> core::ops::Deref for TypedBlob<T> {
     }
 }
 
-impl<T: Sized> AsRef<T> for TypedBlob<T> {
+impl<T, U> AsRef<T> for TypedBlob<U> where U: AsRef<T> {
     fn as_ref(&self) -> &T {
-        self
+        use core::ops::Deref;
+
+        self.deref().as_ref()
     }
 }
 
@@ -337,7 +339,7 @@ impl<T> AsRef<T> for MaybeUnsized<T> {
     fn as_ref(&self) -> &T {
         match self {
             Self::Inline(value) => &value,
-            Self::Unsized(blob) => blob.as_ref(),
+            Self::Unsized(blob) => &blob,
         }
     }
 }
@@ -360,7 +362,7 @@ mod tests {
         assert_eq!(typed.first, 0x0101);
         assert_eq!(typed.second, 0x02020202);
         let typed = unsafe { TypedBlob::<[u8; 10]>::from_box(bytes.clone()) };
-        assert_eq!(typed.as_ref(), bytes.as_ref());
+        assert_eq!(&*typed, bytes.as_ref());
 
         let typed = unsafe { TypedBlob::<[u8]>::from_box_unsized(bytes.clone()) };
         assert_eq!(typed.as_ref(), bytes.as_ref());
