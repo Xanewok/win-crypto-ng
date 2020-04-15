@@ -13,6 +13,7 @@ pub mod random;
 pub mod symmetric;
 
 mod helpers;
+pub use helpers::TypedBlob;
 
 // Compile and test the README
 doctest!("../README.md");
