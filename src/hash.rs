@@ -550,4 +550,20 @@ mod tests {
         let result2 = hash2.finish().unwrap();
         assert_eq!(result1, result2);
     }
+
+    #[test]
+    fn hash_sign() {
+        use super::{PkcsPadding, SignPadding};
+        use crate::asymmetric::{AsymmetricAlgorithm, AsymmetricAlgorithmId, KeyPair};
+
+        let provider =
+            AsymmetricAlgorithm::open(AsymmetricAlgorithmId::Rsa).expect("To open provider");
+        let pair = KeyPair::generate(&provider, 1024)
+            .expect("To generate pair")
+            .finalize();
+        let key_handle = pair.0;
+        let padding = SignPadding::Pkcs1(PkcsPadding(super::HashAlgorithmId::Sha256));
+        let digest = [0x12; 32];
+        super::sign_hash(key_handle, Some(padding), &digest).expect("Signing to succeed");
+    }
 }
