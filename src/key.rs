@@ -133,6 +133,47 @@ newtype_key_blob!(EcdsaP384Private, BCRYPT_ECDSA_PRIVATE_P384_MAGIC, BCRYPT_ECCK
 newtype_key_blob!(EcdsaP521Public, BCRYPT_ECDSA_PUBLIC_P521_MAGIC, BCRYPT_ECCKEY_BLOB);
 newtype_key_blob!(EcdsaP521Private, BCRYPT_ECDSA_PRIVATE_P521_MAGIC, BCRYPT_ECCKEY_BLOB);
 
+impl TypedBlob<RsaPublic> {
+    fn new(pub_exp: &[u8], modulus: &[u8]) -> Self {
+        let header = BCRYPT_RSAKEY_BLOB {
+            BitLength: modulus.len() as u32 * 8,
+            Magic: BCRYPT_RSAPUBLIC_MAGIC,
+            cbModulus: modulus.len() as u32,
+            cbPublicExp: pub_exp.len() as u32,
+            cbPrime1: 0,
+            cbPrime2: 0,
+        };
+
+        let header_size = std::mem::size_of::<BCRYPT_RSAKEY_BLOB>();
+        let pub_exp_range = header_size..header_size + pub_exp.len();
+        let modulus_range = pub_exp_range.end..pub_exp_range.end + modulus.len();
+        let mut boxed = vec![0u8; header_size + pub_exp.len() + modulus.len()];
+        {
+            let header: &[u8] = unsafe { std::slice::from_raw_parts(std::mem::transmute(&header), header_size) };
+            &mut boxed[..header_size].copy_from_slice(header);
+        }
+        &mut boxed[pub_exp_range].copy_from_slice(pub_exp);
+        &mut boxed[modulus_range].copy_from_slice(modulus);
+        let a: TypedBlob<BCRYPT_RSAKEY_BLOB> = unsafe { TypedBlob::from_box(boxed.into_boxed_slice()) };
+        // RsaPublic is `#[repr(transparent)]`, so it's safe to transmute
+        unsafe { std::mem::transmute(a) }
+    }
+}
+
+#[test]
+fn lolol() {
+    use super::TypedBlob;
+    use winapi::shared::bcrypt::BCRYPT_RSAKEY_BLOB;
+    let n = 65537u32.to_be_bytes();
+    let e = &[12, 1, 2];
+    let kurwa = TypedBlob::<RsaPublic>::new(&n, e);
+    dbg!(&kurwa);
+    // CO JEST
+    assert_eq!(kurwa.pub_exp(), n);
+    assert_eq!(kurwa.modulus(), e);
+
+}
+
 impl TypedBlob<BCRYPT_KEY_BLOB> {
     pub fn try_into<T: KeyBlob>(self) -> Result<TypedBlob<T>, Self> {
         if self.Magic == T::MAGIC {

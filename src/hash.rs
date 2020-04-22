@@ -46,6 +46,7 @@
 
 use crate::buffer::Buffer;
 use crate::helpers::{AlgoHandle, Handle, WindowsString};
+use crate::key::KeyHandle;
 use crate::property::{AlgorithmName, HashLength, ObjectLength};
 use crate::{Error, Result};
 use std::convert::TryFrom;
@@ -99,7 +100,7 @@ pub enum HashAlgorithmId {
 }
 
 impl HashAlgorithmId {
-    fn to_str(&self) -> &str {
+    fn to_str(&self) -> &'static str {
         match self {
             Self::Sha1 => BCRYPT_SHA1_ALGORITHM,
             Self::Sha256 => BCRYPT_SHA256_ALGORITHM,
@@ -338,6 +339,90 @@ impl Clone for Hash {
 
         Self { handle, object }
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum SignPadding {
+    Pkcs1(PkcsPadding),
+    Pss(PssPadding),
+}
+
+// TODO: See
+// https://docs.microsoft.com/pl-pl/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_pkcs1_padding_info
+#[derive(Clone, Copy)]
+pub struct PkcsPadding(HashAlgorithmId);
+// TODO: See
+// https://docs.microsoft.com/pl-pl/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_pss_padding_info
+#[derive(Clone, Copy)]
+pub struct PssPadding(HashAlgorithmId, u32);
+
+#[repr(C)]
+union PaddingInfo {
+    pkcs: BCRYPT_PKCS1_PADDING_INFO,
+    pss: BCRYPT_PSS_PADDING_INFO,
+}
+
+pub fn sign_hash(key: KeyHandle, padding: Option<SignPadding>, input: &[u8]) -> Result<Box<[u8]>> {
+    let padding_alg = padding
+        .map(|pad| match pad {
+            SignPadding::Pkcs1(PkcsPadding(algorithm)) => algorithm.to_str(),
+            SignPadding::Pss(PssPadding(algorithm, ..)) => algorithm.to_str(),
+        })
+        .map(WindowsString::from_str);
+    let padding_info = padding.map(|pad| match pad {
+        SignPadding::Pkcs1(..) => PaddingInfo {
+            pkcs: BCRYPT_PKCS1_PADDING_INFO {
+                pszAlgId: padding_alg.unwrap().as_ptr(),
+            },
+        },
+        SignPadding::Pss(PssPadding(.., salt)) => PaddingInfo {
+            pss: BCRYPT_PSS_PADDING_INFO {
+                pszAlgId: padding_alg.unwrap().as_ptr(),
+                cbSalt: salt,
+            },
+        },
+    });
+    let padding_info = padding_info
+        .as_ref()
+        .map(|info| info as *const _ as *mut _)
+        .unwrap_or(null_mut());
+
+    let flags = match padding {
+        Some(SignPadding::Pkcs1(..)) => BCRYPT_PAD_PKCS1,
+        Some(SignPadding::Pss(..)) => BCRYPT_PAD_PSS,
+        None => 0,
+    };
+    let mut result = 0;
+
+    Error::check(unsafe {
+        BCryptSignHash(
+            key.handle,
+            padding_info,
+            input.as_ptr() as *mut _,
+            input.len() as u32,
+            null_mut(),
+            0,
+            &mut result,
+            flags,
+        )
+    })?;
+    let mut output = vec![0u8; result as usize].into_boxed_slice();
+
+    Error::check(unsafe {
+        BCryptSignHash(
+            key.handle,
+            padding_info,
+            input.as_ptr() as *mut _,
+            input.len() as u32,
+            output.as_mut_ptr(),
+            output.len() as u32,
+            &mut result,
+            flags,
+        )
+    })?;
+    assert_eq!(output.len(), result as usize);
+
+    Ok(output)
 }
 
 #[cfg(test)]
