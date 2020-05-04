@@ -343,18 +343,18 @@ impl Clone for Hash {
 
 #[derive(Clone, Copy)]
 pub enum SignPadding {
-    Pkcs1(PkcsPadding),
+    Pkcs1(Pkcs1Padding),
     Pss(PssPadding),
 }
 
 // TODO: See
 // https://docs.microsoft.com/pl-pl/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_pkcs1_padding_info
 #[derive(Clone, Copy)]
-pub struct PkcsPadding(HashAlgorithmId);
+pub struct Pkcs1Padding(pub HashAlgorithmId);
 // TODO: See
 // https://docs.microsoft.com/pl-pl/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_pss_padding_info
 #[derive(Clone, Copy)]
-pub struct PssPadding(HashAlgorithmId, u32);
+pub struct PssPadding(pub HashAlgorithmId, pub u32);
 
 #[repr(C)]
 union PaddingInfo {
@@ -362,10 +362,10 @@ union PaddingInfo {
     pss: BCRYPT_PSS_PADDING_INFO,
 }
 
-pub fn sign_hash(key: KeyHandle, padding: Option<SignPadding>, input: &[u8]) -> Result<Box<[u8]>> {
+pub fn sign_hash(key: &KeyHandle, padding: Option<SignPadding>, input: &[u8]) -> Result<Box<[u8]>> {
     let padding_alg = padding
         .map(|pad| match pad {
-            SignPadding::Pkcs1(PkcsPadding(algorithm)) => algorithm.to_str(),
+            SignPadding::Pkcs1(Pkcs1Padding(algorithm)) => algorithm.to_str(),
             SignPadding::Pss(PssPadding(algorithm, ..)) => algorithm.to_str(),
         })
         .map(WindowsString::from_str);
@@ -553,17 +553,22 @@ mod tests {
 
     #[test]
     fn hash_sign() {
-        use super::{PkcsPadding, SignPadding};
+        use super::{Pkcs1Padding, SignPadding};
         use crate::asymmetric::{AsymmetricAlgorithm, AsymmetricAlgorithmId, KeyPair};
+        use crate::hash::HashAlgorithmId;
+        use crate::hash::sign_hash;
 
         let provider =
             AsymmetricAlgorithm::open(AsymmetricAlgorithmId::Rsa).expect("To open provider");
         let pair = KeyPair::generate(&provider, 1024)
             .expect("To generate pair")
             .finalize();
-        let key_handle = pair.0;
-        let padding = SignPadding::Pkcs1(PkcsPadding(super::HashAlgorithmId::Sha256));
-        let digest = [0x12; 32];
-        super::sign_hash(key_handle, Some(padding), &digest).expect("Signing to succeed");
+
+        let padding = SignPadding::Pkcs1(Pkcs1Padding(HashAlgorithmId::Sha1));
+        let digest = [0x00; 20];
+        let output = sign_hash(pair.handle(), Some(padding), &digest).expect("Signing to succeed");
+        dbg!(output.len());
+        dbg!(output);
+        panic!();
     }
 }

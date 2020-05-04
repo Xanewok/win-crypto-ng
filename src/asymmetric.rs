@@ -118,6 +118,12 @@ impl AsymmetricAlgorithm {
 }
 
 pub struct KeyPair(pub(crate) KeyHandle);
+impl KeyPair {
+    pub fn handle(&self) -> &KeyHandle {
+        &self.0
+    }
+}
+
 pub struct KeyPairBuilder<'a> {
     _provider: &'a AsymmetricAlgorithm,
     handle: BCRYPT_KEY_HANDLE,
