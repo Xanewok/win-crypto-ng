@@ -461,4 +461,58 @@ mod tests {
         })
         .is_err());
     }
+
+    #[test]
+    fn dyn_struct() {
+        #[repr(C)]
+        #[derive(Debug, PartialEq)]
+        pub struct MyHeader { count: u8, some: u16, another: u8 }; // 6 bytes
+        #[derive(Debug)]
+        #[repr(C)]
+        struct MyDynStruct([u8; 12]);
+        dyn_struct! {
+            trait MyDynStructView {
+                MyHeader,
+                field1[count],
+                field2[4],
+            }
+        };
+        impl AsRef<MyHeader> for MyDynStruct {
+            fn as_ref(&self) -> &MyHeader {
+                let storage = &self.0[..std::mem::size_of::<MyHeader>()];
+                unsafe { &*storage.as_ptr().cast() }
+            }
+        }
+        impl AsBytes for MyDynStruct {
+            fn as_bytes(&self) -> &[u8] {
+                &self.0
+            }
+        }
+        impl MyDynStructView for MyDynStruct {}
+
+        let dyn_struct = MyDynStruct([
+            0x2, // MyHeader.count
+            0xDE, // MyHeader.some (padding)
+            0xFF, 0xFF, // MyHeader.some
+            0x03, // MyHeader.another
+            0xDE, // alignment for total header size to be a multiple of largest member alignemnt (some)
+            0xDD, 0xDD, // field1[count]
+            0xA, 0xB, 0xC, 0xD, // field2[3]
+        ]);
+        eprintln!("{}", std::mem::size_of::<MyHeader>());
+        assert_eq!(dyn_struct.as_ref(), &MyHeader { count: 0x02, some: 0xFFFF, another: 0x03 });
+        assert_eq!(dyn_struct.field1(), &[0xDD, 0xDD]);
+        assert_eq!(dyn_struct.field2(), &[0xA, 0xB, 0xC, 0xD]);
+
+        let blob = unsafe { TypedBlob::<MyHeader>::from_box(Box::new(dyn_struct.0)) };
+        impl MyDynStructView for TypedBlob<MyHeader> {}
+        impl AsRef<MyHeader> for MyHeader {
+            fn as_ref(&self) -> &MyHeader {
+                self
+            }
+        }
+        assert_eq!(blob.as_ref(), &MyHeader { count: 0x02, some: 0xFFFF, another: 0x03 });
+        assert_eq!(blob.field1(), &[0xDD, 0xDD]);
+        assert_eq!(blob.field2(), &[0xA, 0xB, 0xC, 0xD]);
+    }
 }
