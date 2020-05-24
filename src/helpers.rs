@@ -26,6 +26,19 @@ pub trait Handle {
         }
     }
 
+    fn set_property_dyn(&self, property: &str, value: &[u8]) -> Result<()> {
+        let property = WindowsString::from_str(property);
+        unsafe {
+            Error::check(BCryptSetProperty(
+                self.as_ptr(),
+                property.as_ptr(),
+                value as *const _ as PUCHAR,
+                value.len() as ULONG,
+                0,
+            ))
+        }
+    }
+
     fn get_property<T: Property>(&self) -> Result<MaybeUnsized<T::Value>>
     where
         T::Value: Sized,
@@ -208,7 +221,12 @@ pub struct TypedBlob<T: ?Sized> {
 
 impl<T: ?Sized> std::fmt::Debug for TypedBlob<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TypedBlob({}, {:?})", std::any::type_name::<T>(), self.allocation)
+        write!(
+            f,
+            "TypedBlob({}, {:?})",
+            std::any::type_name::<T>(),
+            self.allocation
+        )
     }
 }
 
@@ -369,6 +387,7 @@ impl<T: ?Sized> AsBytes for TypedBlob<T> {
 #[macro_export]
 macro_rules! dyn_struct {
     (
+        struct $struct_ident: ident,
         $(#[$outer:meta])*
         trait $ident: ident {
             $header: ty,
@@ -387,6 +406,16 @@ macro_rules! dyn_struct {
                 )*
             }
         }
+
+        #[repr(transparent)]
+        pub struct $struct_ident($header);
+        impl AsRef<$header> for $struct_ident {
+            fn as_ref(&self) -> &$header {
+                &self.0
+            }
+        }
+
+        impl $ident for TypedBlob<$struct_ident> {}
     };
     // Expand fields. Recursively expand each field, pushing the processed field
     //  identifier to a queue which is later used to calculate field offset for
@@ -466,11 +495,16 @@ mod tests {
     fn dyn_struct() {
         #[repr(C)]
         #[derive(Debug, PartialEq)]
-        pub struct MyHeader { count: u8, some: u16, another: u8 }; // 6 bytes
+        pub struct MyHeader {
+            count: u8,
+            some: u16,
+            another: u8,
+        }; // 6 bytes
         #[derive(Debug)]
         #[repr(C)]
         struct MyDynStruct([u8; 12]);
         dyn_struct! {
+            struct MyDynStructBlob,
             trait MyDynStructView {
                 MyHeader,
                 field1[count],
@@ -491,7 +525,7 @@ mod tests {
         impl MyDynStructView for MyDynStruct {}
 
         let dyn_struct = MyDynStruct([
-            0x2, // MyHeader.count
+            0x2,  // MyHeader.count
             0xDE, // MyHeader.some (padding)
             0xFF, 0xFF, // MyHeader.some
             0x03, // MyHeader.another
@@ -500,7 +534,14 @@ mod tests {
             0xA, 0xB, 0xC, 0xD, // field2[3]
         ]);
         eprintln!("{}", std::mem::size_of::<MyHeader>());
-        assert_eq!(dyn_struct.as_ref(), &MyHeader { count: 0x02, some: 0xFFFF, another: 0x03 });
+        assert_eq!(
+            dyn_struct.as_ref(),
+            &MyHeader {
+                count: 0x02,
+                some: 0xFFFF,
+                another: 0x03
+            }
+        );
         assert_eq!(dyn_struct.field1(), &[0xDD, 0xDD]);
         assert_eq!(dyn_struct.field2(), &[0xA, 0xB, 0xC, 0xD]);
 
@@ -511,7 +552,14 @@ mod tests {
                 self
             }
         }
-        assert_eq!(blob.as_ref(), &MyHeader { count: 0x02, some: 0xFFFF, another: 0x03 });
+        assert_eq!(
+            blob.as_ref(),
+            &MyHeader {
+                count: 0x02,
+                some: 0xFFFF,
+                another: 0x03
+            }
+        );
         assert_eq!(blob.field1(), &[0xDD, 0xDD]);
         assert_eq!(blob.field2(), &[0xA, 0xB, 0xC, 0xD]);
     }
