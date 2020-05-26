@@ -17,6 +17,7 @@ impl AsymmetricKey {
     }
 }
 
+/// Main builder type used to generate asymmetric key pairs.
 pub struct Builder<A: Algorithm> {
     algorithm: A,
 }
@@ -46,7 +47,7 @@ impl Builder<Dsa> {
     pub fn key_bits_in_512_1024(
         self,
         key_bits: u32,
-    ) -> Result<BuilderWithKeyBits<Dsa, KeyBitsGt512Lte1024>> {
+    ) -> Result<BuilderWithKeyBits<Dsa, KeyBitsGte512Lte1024>> {
         match key_bits {
             512..=1024 => {}
             _ => return Err(Error::InvalidParameter),
@@ -62,7 +63,7 @@ impl Builder<Dsa> {
     pub fn key_bits_in_1024_3072(
         self,
         key_bits: u32,
-    ) -> Result<BuilderWithKeyBits<Dsa, KeyBitsGt1024Lte3072>> {
+    ) -> Result<BuilderWithKeyBits<Dsa, KeyBitsGte1024Lte3072>> {
         match key_bits {
             1024..=3072 => {}
             _ => return Err(Error::InvalidParameter),
@@ -76,20 +77,28 @@ impl Builder<Dsa> {
     }
 }
 
+/// Marker trait for key constraint such as key size.
 pub trait KeyConstraint {}
+/// No constraint for keys. Used by default.
 pub struct NoConstraint {}
 impl KeyConstraint for NoConstraint {}
-pub struct KeyBitsGt512Lte1024 {}
-impl KeyConstraint for KeyBitsGt512Lte1024 {}
-pub struct KeyBitsGt1024Lte3072 {}
-impl KeyConstraint for KeyBitsGt1024Lte3072 {}
+/// Key size in bits has to be in the [512, 1024] range.
+pub struct KeyBitsGte512Lte1024 {}
+impl KeyConstraint for KeyBitsGte512Lte1024 {}
+/// Key size in bits has to be in the [512, 1024] range.
+pub struct KeyBitsGte1024Lte3072 {}
+impl KeyConstraint for KeyBitsGte1024Lte3072 {}
 
+/// Builder type with key length provided in bits.
 pub struct BuilderWithKeyBits<A: Algorithm, C: KeyConstraint = NoConstraint> {
     algorithm: A,
     key_bits: u32,
     key_constraint: PhantomData<C>,
 }
 
+/// Marker trait implemented for algorithms that do not require explicitly
+/// providing key size in bits (and, by extension, other parameters). For
+/// example, for [`EcdhP384`] we always know the key size is 384 bits.
 pub trait NotNeedsKeySize: Algorithm {}
 impl NotNeedsKeySize for AsymmetricAlgorithmId {}
 impl NotNeedsKeySize for EcdhP256 {}
@@ -98,6 +107,8 @@ impl NotNeedsKeySize for EcdhP521 {}
 impl NotNeedsKeySize for EcdsaP256 {}
 impl NotNeedsKeySize for EcdsaP384 {}
 impl NotNeedsKeySize for EcdsaP521 {}
+/// Marker trait implemented for algorithms that require explicitly providing
+/// key size in bits to be generated.
 pub trait NeedsKeySize: Algorithm {}
 impl NeedsKeySize for AsymmetricAlgorithmId {}
 impl NeedsKeySize for Dh {}
@@ -137,7 +148,7 @@ impl BuilderWithKeyBits<Dsa> {
     }
 }
 
-impl BuilderWithKeyBits<Dsa, KeyBitsGt512Lte1024> {
+impl BuilderWithKeyBits<Dsa, KeyBitsGte512Lte1024> {
     pub fn with_params(self, params: DsaParamsV1) -> BuilderWithParams<Dsa, DsaParamsV1> {
         BuilderWithParams {
             algorithm: self.algorithm,
@@ -147,7 +158,7 @@ impl BuilderWithKeyBits<Dsa, KeyBitsGt512Lte1024> {
     }
 }
 
-impl BuilderWithKeyBits<Dsa, KeyBitsGt1024Lte3072> {
+impl BuilderWithKeyBits<Dsa, KeyBitsGte1024Lte3072> {
     pub fn with_params(self, params: DsaParamsV2) -> BuilderWithParams<Dsa, DsaParamsV2> {
         BuilderWithParams {
             algorithm: self.algorithm,
@@ -237,20 +248,19 @@ pub struct BuilderWithParams<A: Algorithm, Params: BuilderParams = ()> {
 }
 
 impl<A: Algorithm, P: BuilderParams> BuilderWithParams<A, P> {
-    fn build(self) -> Result<AsymmetricKey<A, Private>> {
+    pub fn build(self) -> Result<AsymmetricKey<A, Private>> {
         let id = self.algorithm.id();
 
         let provider = AsymmetricAlgorithm::open(id)?;
         let pair = KeyPair::generate(&provider, self.key_bits)?;
-        eprintln!("build: before set_param");
         self.params.set_param(pair.handle, self.key_bits)?;
-        eprintln!("build: after set_param");
 
         pair.finalize()
             .map(|pair| AsymmetricKey(pair.0, self.algorithm, PhantomData))
     }
 }
 
+///
 #[derive(Debug)]
 pub struct DhParams {
     modulus: Vec<u8>,
@@ -413,13 +423,13 @@ impl BuilderWithKeyBits<Dsa> {
 /// Type-erased version of [`AsymmetricKey`]
 pub(crate) struct KeyPair(pub(crate) KeyHandle);
 
-pub struct KeyPairBuilder<'a> {
+struct KeyPairBuilder<'a> {
     _provider: &'a AsymmetricAlgorithm,
     handle: BCRYPT_KEY_HANDLE,
 }
 
 impl KeyPair {
-    pub fn generate(provider: &AsymmetricAlgorithm, length: u32) -> Result<KeyPairBuilder> {
+    fn generate(provider: &AsymmetricAlgorithm, length: u32) -> Result<KeyPairBuilder> {
         let mut handle: BCRYPT_KEY_HANDLE = null_mut();
 
         crate::Error::check(unsafe {
@@ -505,6 +515,7 @@ impl KeyPairBuilder<'_> {
 use crate::dyn_struct;
 
 dyn_struct! {
+    struct DsaParameter,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
     trait DsaParameterView {
@@ -514,16 +525,8 @@ dyn_struct! {
     }
 }
 
-#[repr(transparent)]
-pub struct DsaParameter(BCRYPT_DSA_PARAMETER_HEADER);
-impl AsRef<BCRYPT_DSA_PARAMETER_HEADER> for DsaParameter {
-    fn as_ref(&self) -> &BCRYPT_DSA_PARAMETER_HEADER {
-        &self.0
-    }
-}
-impl DsaParameterView for TypedBlob<DsaParameter> {}
-
 dyn_struct! {
+    struct DsaParameterV2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
     trait DsaParameterV2View {
@@ -533,16 +536,8 @@ dyn_struct! {
     }
 }
 
-#[repr(transparent)]
-pub struct DsaParameterV2(BCRYPT_DSA_PARAMETER_HEADER_V2);
-impl AsRef<BCRYPT_DSA_PARAMETER_HEADER_V2> for DsaParameterV2 {
-    fn as_ref(&self) -> &BCRYPT_DSA_PARAMETER_HEADER_V2 {
-        &self.0
-    }
-}
-impl DsaParameterV2View for TypedBlob<DsaParameterV2> {}
-
 dyn_struct! {
+    struct DhParameter,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_parameter_header
     trait DhParameterView {
@@ -551,15 +546,6 @@ dyn_struct! {
         generator[cbKeyLength],
     }
 }
-
-#[repr(transparent)]
-pub struct DhParameter(BCRYPT_DH_PARAMETER_HEADER);
-impl AsRef<BCRYPT_DH_PARAMETER_HEADER> for DhParameter {
-    fn as_ref(&self) -> &BCRYPT_DH_PARAMETER_HEADER {
-        &self.0
-    }
-}
-impl DhParameterView for TypedBlob<DhParameter> {}
 
 #[cfg(test)]
 mod tests {

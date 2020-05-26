@@ -209,7 +209,7 @@ newtype_key_blob!(
     EcdsaP521Private, BCRYPT_ECCPRIVATE_BLOB, BCRYPT_ECDSA_PRIVATE_P521_MAGIC, BCRYPT_ECCKEY_BLOB
 );
 
-impl RsaKeyBlobPublic for TypedBlob<RsaPublic> {}
+impl RsaKeyPublicView for TypedBlob<RsaPublic> {}
 impl RsaKeyBlobPrivate for TypedBlob<RsaPrivate> {}
 impl RsaKeyBlobFullPrivate for TypedBlob<RsaFullPrivate> {}
 impl DsaKeyBlobPublic for TypedBlob<DsaPublic> {}
@@ -232,9 +232,10 @@ impl EccKeyBlobPublic for TypedBlob<EcdsaP521Public> {}
 impl EccKeyBlobPrivate for TypedBlob<EcdsaP521Private> {}
 
 dyn_struct! {
+    struct RsaKeyPublicBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    trait RsaKeyBlobPublic {
+    trait RsaKeyPublicView {
         BCRYPT_RSAKEY_BLOB,
         pub_exp[cbPublicExp],
         modulus[cbModulus],
@@ -242,6 +243,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct RsaKeyPrivateBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
     trait RsaKeyBlobPrivate {
@@ -254,6 +256,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct RsaKeyFullPrivateBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
     trait RsaKeyBlobFullPrivate {
@@ -270,6 +273,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DhKeyPublicBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
     #[allow(non_snake_case)]
@@ -282,6 +286,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DhKeyPrivateBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
     #[allow(non_snake_case)]
@@ -295,6 +300,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DsaKeyPublicBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
     trait DsaKeyBlobPublic {
@@ -306,6 +312,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DsaKeyPrivateBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
     trait DsaKeyBlobPrivate {
@@ -318,6 +325,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DsaKeyPublicV2Blob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
     trait DsaKeyBlobPublicV2 {
@@ -329,6 +337,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct DsaKeyPrivateV2Blob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
     trait DsaKeyBlobPrivateV2 {
@@ -341,6 +350,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct EccKeyPublicBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
     trait EccKeyBlobPublic {
@@ -351,6 +361,7 @@ dyn_struct! {
 }
 
 dyn_struct! {
+    struct EccKeyPrivateBlob,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
     trait EccKeyBlobPrivate {

@@ -235,9 +235,9 @@ impl AsymmetricKey<Rsa, Private> {
     ///
     /// ```
     /// # use win_crypto_ng::asymmetric::{AsymmetricAlgorithm, AsymmetricAlgorithmId};
-    /// # use win_crypto_ng::asymmetric::{Algo, Rsa, Private, AsymmetricKey};
+    /// # use win_crypto_ng::asymmetric::{Algorithm, Rsa, Private, AsymmetricKey};
     /// # use win_crypto_ng::key::{BlobType, RsaPublic, RsaPrivate};
-    /// # use win_crypto_ng::key::{RsaKeyBlobFullPrivate, RsaKeyBlobPublic};
+    /// # use win_crypto_ng::key::{RsaKeyBlobFullPrivate, RsaKeyPublicView};
     ///
     /// let pair = AsymmetricKey::builder(Rsa).key_bits(1024).build().unwrap();
     /// let blob = pair.export_full().unwrap();
@@ -270,9 +270,9 @@ impl AsymmetricKey<Rsa, Private> {
     /// # Example
     /// ```
     /// # use win_crypto_ng::asymmetric::{AsymmetricAlgorithm, AsymmetricAlgorithmId};
-    /// # use win_crypto_ng::asymmetric::{Algo, Rsa, Private, AsymmetricKey};
+    /// # use win_crypto_ng::asymmetric::{Algorithm, Rsa, Private, AsymmetricKey};
     /// # use win_crypto_ng::key::{BlobType, RsaPublic, RsaPrivate};
-    /// # use win_crypto_ng::key::{RsaKeyBlobFullPrivate, RsaKeyBlobPublic};
+    /// # use win_crypto_ng::key::{RsaKeyBlobFullPrivate, RsaKeyPublicView};
     ///
     /// let pair = AsymmetricKey::builder(Rsa).key_bits(1024).build().unwrap();
     /// let blob = pair.export_public().unwrap();
@@ -290,5 +290,93 @@ impl AsymmetricKey<Rsa, Private> {
         Ok(KeyPair::export(self.0.handle, BlobType::RsaFullPrivate)?
             .try_into::<RsaFullPrivate>()
             .expect("Guaranteed"))
+    }
+}
+
+trait Import<A: Algorithm, P: Parts> {
+    type Blob: Into<TypedBlob<BCRYPT_KEY_BLOB>>;
+    fn import(algo: A, provider: &AsymmetricAlgorithm, blob: Self::Blob) -> Result<AsymmetricKey<A, P>> {
+        if provider.id()? != algo.id() {
+            return Err(crate::Error::InvalidParameter);
+        };
+
+        KeyPair::import(provider, blob.into(), true)
+            .map(|pair| AsymmetricKey::<A, P>::from((pair.0, algo)))
+    }
+}
+
+macro_rules! import_blobs {
+    ($(($algorithm: ident, $parts: ident, $blob: ty)),*$(,)?) => {
+        $(
+        impl Import<$algorithm, $parts> for AsymmetricKey<$algorithm, $parts> {
+            type Blob = $blob;
+        }
+        )*
+    };
+}
+
+use crate::key::*;
+
+enum DsaPublicBlob {
+    V1(TypedBlob<DsaPublic>),
+    V2(TypedBlob<DsaPublicV2>),
+}
+
+impl Into<TypedBlob<BCRYPT_KEY_BLOB>> for DsaPublicBlob {
+    fn into(self) -> TypedBlob<BCRYPT_KEY_BLOB> {
+        match self {
+            DsaPublicBlob::V1(v1) => v1.into(),
+            DsaPublicBlob::V2(v2) => v2.into(),
+        }
+    }
+}
+
+enum DsaPrivateBlob {
+    V1(TypedBlob<DsaPrivate>),
+    V2(TypedBlob<DsaPrivateV2>),
+}
+
+impl Into<TypedBlob<BCRYPT_KEY_BLOB>> for DsaPrivateBlob {
+    fn into(self) -> TypedBlob<BCRYPT_KEY_BLOB> {
+        match self {
+            DsaPrivateBlob::V1(v1) => v1.into(),
+            DsaPrivateBlob::V2(v2) => v2.into(),
+        }
+    }
+}
+
+import_blobs!(
+    (Dh, Public, TypedBlob<DhPublic>),
+    (Dh, Private, TypedBlob<DhPrivate>),
+    (Dsa, Public, DsaPublicBlob),
+    (Dsa, Private, DsaPrivateBlob),
+    (EcdhP256, Public, TypedBlob<EcdhP256Public>),
+    (EcdhP256, Private, TypedBlob<EcdhP256Private>),
+    (EcdhP384, Public, TypedBlob<EcdhP384Public>),
+    (EcdhP384, Private, TypedBlob<EcdhP384Private>),
+    (EcdhP521, Public, TypedBlob<EcdhP521Public>),
+    (EcdhP521, Private, TypedBlob<EcdhP521Private>),
+    (EcdsaP256, Public, TypedBlob<EcdsaP256Public>),
+    (EcdsaP256, Private, TypedBlob<EcdsaP256Private>),
+    (EcdsaP384, Public, TypedBlob<EcdsaP384Public>),
+    (EcdsaP384, Private, TypedBlob<EcdsaP384Private>),
+    (EcdsaP521, Public, TypedBlob<EcdsaP521Public>),
+    (EcdsaP521, Private, TypedBlob<EcdsaP521Private>),
+    (Rsa, Public, TypedBlob<RsaPublic>),
+    (Rsa, Private, TypedBlob<RsaPrivate>),
+);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import() {
+        let generated = AsymmetricKey::builder(Rsa).key_bits(1024).build();
+        let provider = AsymmetricAlgorithm::open(AsymmetricAlgorithmId::Rsa).unwrap();
+
+        // let blob = 
+        // let imported = AsymmetricKey::import(&provider, blob: TypedBlob<crate::key::RsaPrivate>)
+        panic!();
     }
 }
