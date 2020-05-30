@@ -370,14 +370,60 @@ impl<T> AsRef<T> for MaybeUnsized<T> {
     }
 }
 
-pub trait AsBytes {
-    fn as_bytes(&self) -> &[u8];
+pub trait AsBytes<'a> {
+    fn as_bytes(&'a self) -> &'a [u8];
 }
 
-impl<T: ?Sized> AsBytes for TypedBlob<T> {
+impl<T: ?Sized> AsBytes<'_> for TypedBlob<T> {
     fn as_bytes(&self) -> &[u8] {
         self.as_bytes()
     }
+}
+
+struct DynStructBox<'a, H: 'a, T: DynTail<'a, H>>(Box<[u8]>, PhantomData<&'a H>, PhantomData<T>);
+impl<'a, T, H: DynTail<'a, T>> AsBytes<'a> for DynStructBox<'a, T, H> {
+    fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+unsafe impl<'a, H, T> DynStruct<'a, H, T> for DynStructBox<'a, H, T>
+    where
+    H: 'a,
+    T: DynTail<'a, H> {}
+
+impl<'a, T, H: DynTail<'a, T>> DynStructBox<'a, T, H> {
+    unsafe fn from_box(allocation: Box<[u8]>) -> Self {
+        Self(allocation, PhantomData, PhantomData)
+    }
+}
+
+pub unsafe trait DynStruct<'a, H: 'a, T: DynTail<'a, H>>: AsBytes<'a> {
+    fn header(&'a self) -> &'a H {
+        let storage = &self.as_bytes()[..std::mem::size_of::<H>()];
+        unsafe { &*storage.as_ptr().cast() }
+    }
+    fn tail(&'a self) -> T {
+        let tail = &self.as_bytes()[std::mem::size_of::<H>()..];
+        let header: &'a H = self.header();
+        DynTail::from_bytes(header, tail)
+    }
+}
+
+fn argh() {
+    use crate::key::RsaKeyPublicViewTail;
+    type RsaKeyBlob<'a> = DynStructBox<'a, BCRYPT_RSAKEY_BLOB, RsaKeyPublicViewTail<'a>>;
+
+    let lel: Box<[u8]> = vec![0u8; 2].into_boxed_slice();
+    let argh = DynStructBox::<BCRYPT_RSAKEY_BLOB, RsaKeyPublicViewTail<'_>>(lel, PhantomData, PhantomData);
+
+    let lel: Box<[u8]> = vec![0u8; 2].into_boxed_slice();
+    let aa = unsafe { RsaKeyBlob::from_box(lel) };
+    let header = aa.tail().modulus;
+}
+
+pub unsafe trait DynTail<'a, H> {
+    fn from_bytes(header: &'a H, bytes: &'a [u8]) -> Self;
 }
 
 /// Defines a trait for accessing dynamic fields (byte slices) for structs that
@@ -387,10 +433,10 @@ impl<T: ?Sized> AsBytes for TypedBlob<T> {
 #[macro_export]
 macro_rules! dyn_struct {
     (
-        struct $struct_ident: ident,
+        struct $wrapper_ident: ident,
         header: $header: ty,
         $(#[$outer:meta])*
-        tail: $ident: ident {
+        tail: trait $ident: ident; struct $tail_ident: ident {
             $(
                 $(#[$meta:meta])*
                 $field: ident [$($len: tt)*],
@@ -398,7 +444,7 @@ macro_rules! dyn_struct {
         }
     ) => {
         $(#[$outer])*
-        pub trait $ident: $crate::helpers::AsBytes + AsRef<$header> {
+        pub trait $ident<'a>: $crate::helpers::AsBytes<'a> + AsRef<$header> {
             dyn_struct! { ;
                 $(
                     $(#[$meta])*
@@ -407,15 +453,62 @@ macro_rules! dyn_struct {
             }
         }
 
+        #[derive(Debug)]
+        pub struct $tail_ident<'a> {
+            $(
+                $(#[$meta])*
+                pub $field: &'a [u8],
+            )*
+        }
+
         #[repr(transparent)]
-        pub struct $struct_ident($header);
-        impl AsRef<$header> for $struct_ident {
+        pub struct $wrapper_ident($header);
+        impl AsRef<$header> for $wrapper_ident {
             fn as_ref(&self) -> &$header {
                 &self.0
             }
         }
 
-        impl $ident for TypedBlob<$struct_ident> {}
+        unsafe impl<'a> $crate::helpers::DynTail<'a, $header> for $tail_ident<'a> {
+            #[allow(unused_assignments)]
+            fn from_bytes<'b>(header: &'b $header, bytes: &'a [u8]) -> $tail_ident<'a> {
+                let mut offset = 0;
+                $(
+                    let field_len = dyn_struct! { header, $($len)*};
+                    let $field: &'a [u8] = &bytes[offset..offset + field_len];
+                    offset += field_len;
+                )*
+
+                $tail_ident {
+                    $($field,)*
+                }
+            }
+        }
+
+        impl TypedBlob<$wrapper_ident> {
+            #[allow(unused_assignments)]
+            pub fn from_parts(header: &$header, tail: &$tail_ident) -> Self {
+                let header_len = std::mem::size_of_val(header);
+                let total_size: usize = header_len
+                $(
+                    + dyn_struct! { header, $($len)*}
+                )*;
+
+                let mut boxed = vec![0u8; total_size].into_boxed_slice();
+                let header_as_bytes = unsafe { std::slice::from_raw_parts(
+                    header as *const _ as *const u8,
+                    header_len
+                ) };
+                &mut boxed[..header_len].copy_from_slice(header_as_bytes);
+                let mut offset = header_len;
+                $(
+                    let field_len = dyn_struct! { header, $($len)*};
+                    &mut boxed[offset..offset + field_len].copy_from_slice(tail.$field);
+                    offset += field_len;
+                )*
+                unsafe { TypedBlob::from_box(boxed) }
+            }
+        }
     };
     // Expand fields. Recursively expand each field, pushing the processed field
     //  identifier to a queue which is later used to calculate field offset for
@@ -431,7 +524,7 @@ macro_rules! dyn_struct {
     ) => {
         $(#[$curr_meta])*
         #[inline(always)]
-        fn $curr(&self) -> &[u8] {
+        fn $curr(&'a self) -> &'a [u8] {
             let this = self.as_ref();
 
             let offset = std::mem::size_of_val(this)
@@ -506,61 +599,68 @@ mod tests {
         dyn_struct! {
             struct MyDynStructBlob,
             header: MyHeader,
-            tail: MyDynStructView {
+            tail: trait MyDynStructView; struct MyDynStructTail {
                 field1[count],
                 field2[4],
             }
         };
+
         impl AsRef<MyHeader> for MyDynStruct {
             fn as_ref(&self) -> &MyHeader {
                 let storage = &self.0[..std::mem::size_of::<MyHeader>()];
                 unsafe { &*storage.as_ptr().cast() }
             }
         }
-        impl AsBytes for MyDynStruct {
+        impl AsBytes<'_> for MyDynStruct {
             fn as_bytes(&self) -> &[u8] {
                 &self.0
             }
         }
-        impl MyDynStructView for MyDynStruct {}
+        impl MyDynStructView<'_> for MyDynStruct {}
 
+        let header = MyHeader {
+            count: 0x02,
+            some: 0xFFFF,
+            another: 0x03,
+        };
         let dyn_struct = MyDynStruct([
             0x2,  // MyHeader.count
-            0xDE, // MyHeader.some (padding)
+            0x00, // MyHeader.some (padding)
             0xFF, 0xFF, // MyHeader.some
             0x03, // MyHeader.another
-            0xDE, // alignment for total header size to be a multiple of largest member alignemnt (some)
+            0x00, // header padding to largest member alignment (MyHeader.some)
             0xDD, 0xDD, // field1[count]
-            0xA, 0xB, 0xC, 0xD, // field2[3]
-        ]);
-        eprintln!("{}", std::mem::size_of::<MyHeader>());
-        assert_eq!(
-            dyn_struct.as_ref(),
-            &MyHeader {
-                count: 0x02,
-                some: 0xFFFF,
-                another: 0x03
+            0xA, 0xB, 0xC, 0xD, // field2[4]
+            ]);
+            dbg!(std::mem::size_of::<MyHeader>());
+            assert_eq!(dyn_struct.header(), &header);
+            assert_eq!(dyn_struct.tail().field1, &[0xDD, 0xDD]);
+            assert_eq!(dyn_struct.tail().field2, &[0xA, 0xB, 0xC, 0xD]);
+
+        unsafe impl<'a> DynStruct<'a, MyHeader, MyDynStructTail<'a>> for MyDynStruct {}
+        dbg!(dyn_struct.header());
+        panic!();
+
+        let raw = TypedBlob::<MyDynStructBlob>::from_parts(
+            &header,
+            &MyDynStructTail {
+                field1: &[0xDD, 0xDD],
+                field2: &[0xA, 0xB, 0xC, 0xD]
             }
         );
-        assert_eq!(dyn_struct.field1(), &[0xDD, 0xDD]);
-        assert_eq!(dyn_struct.field2(), &[0xA, 0xB, 0xC, 0xD]);
+        // NOTE: The padding bytes' value is not defined and may change
+        assert_eq!(dyn_struct.0, raw.as_bytes());
 
         let blob = unsafe { TypedBlob::<MyHeader>::from_box(Box::new(dyn_struct.0)) };
-        impl MyDynStructView for TypedBlob<MyHeader> {}
+        impl MyDynStructView<'_> for TypedBlob<MyHeader> {}
+        unsafe impl<'a> DynStruct<'a, MyHeader, MyDynStructTail<'a>> for TypedBlob<MyHeader> {}
         impl AsRef<MyHeader> for MyHeader {
             fn as_ref(&self) -> &MyHeader {
                 self
             }
         }
-        assert_eq!(
-            blob.as_ref(),
-            &MyHeader {
-                count: 0x02,
-                some: 0xFFFF,
-                another: 0x03
-            }
-        );
-        assert_eq!(blob.field1(), &[0xDD, 0xDD]);
-        assert_eq!(blob.field2(), &[0xA, 0xB, 0xC, 0xD]);
+        assert_eq!(blob.as_ref(), &header);
+        assert_eq!(blob.tail().field1, &[0xDD, 0xDD]);
+        assert_eq!(blob.tail().field2, &[0xA, 0xB, 0xC, 0xD]);
     }
 }
