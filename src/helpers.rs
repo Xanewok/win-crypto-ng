@@ -388,9 +388,9 @@ impl<T: ?Sized> AsBytes for TypedBlob<T> {
 macro_rules! dyn_struct {
     (
         struct $struct_ident: ident,
+        header: $header: ty,
         $(#[$outer:meta])*
-        trait $ident: ident {
-            $header: ty,
+        tail: $ident: ident {
             $(
                 $(#[$meta:meta])*
                 $field: ident [$($len: tt)*],
@@ -505,8 +505,8 @@ mod tests {
         struct MyDynStruct([u8; 12]);
         dyn_struct! {
             struct MyDynStructBlob,
-            trait MyDynStructView {
-                MyHeader,
+            header: MyHeader,
+            tail: MyDynStructView {
                 field1[count],
                 field2[4],
             }

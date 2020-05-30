@@ -532,10 +532,10 @@ use crate::dyn_struct;
 
 dyn_struct! {
     struct DsaParameter,
+    header: BCRYPT_DSA_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    trait DsaParameterView {
-        BCRYPT_DSA_PARAMETER_HEADER,
+    tail: DsaParameterView {
         prime[cbKeyLength],
         generator[cbKeyLength],
     }
@@ -543,10 +543,10 @@ dyn_struct! {
 
 dyn_struct! {
     struct DsaParameterV2,
+    header: BCRYPT_DSA_PARAMETER_HEADER_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    trait DsaParameterV2View {
-        BCRYPT_DSA_PARAMETER_HEADER_V2,
+    tail: DsaParameterV2View {
         prime[cbKeyLength],
         generator[cbKeyLength],
     }
@@ -554,10 +554,10 @@ dyn_struct! {
 
 dyn_struct! {
     struct DhParameter,
+    header: BCRYPT_DH_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_parameter_header
-    trait DhParameterView {
-        BCRYPT_DH_PARAMETER_HEADER,
+    tail: DhParameterView {
         modulus[cbKeyLength],
         generator[cbKeyLength],
     }
