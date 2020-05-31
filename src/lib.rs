@@ -13,6 +13,7 @@ pub mod random;
 pub mod symmetric;
 
 mod helpers;
+mod key_blob;
 
 // Compile and test the README
 doctest!("../README.md");
