@@ -1,7 +1,7 @@
 //! WIP
 
 /// Checks if a pointer can be a valid Rust reference.
-fn check_ref_safe<T>(ptr: *const T) -> Result<(), ()> {
+fn _check_ref_safe<T>(ptr: *const T) -> Result<(), ()> {
     if ptr == std::ptr::null() || ptr as usize % std::mem::align_of::<&T>() != 0 {
         return Err(());
     }
@@ -22,7 +22,7 @@ pub unsafe trait FromBytes {
 
 
 unsafe impl FromBytes for [u16] {
-    fn from_bytes(bytes: &[u8]) -> &Self {
+    fn from_bytes(_bytes: &[u8]) -> &Self {
         unimplemented!()
     }
 
@@ -57,7 +57,7 @@ unsafe impl FromBytes for u32 {
         unsafe { std::mem::transmute(bytes.as_ptr()) }
     }
 
-    fn from_boxed(boxed: Box<[u8]>) -> Box<Self> {
+    fn from_boxed(_boxed: Box<[u8]>) -> Box<Self> {
         unimplemented!()
     }
 }
@@ -68,7 +68,7 @@ unsafe impl FromBytes for winapi::shared::bcrypt::BCRYPT_KEY_LENGTHS_STRUCT {
         unsafe { std::mem::transmute(bytes.as_ptr()) }
     }
 
-    fn from_boxed(boxed: Box<[u8]>) -> Box<Self> {
+    fn from_boxed(_boxed: Box<[u8]>) -> Box<Self> {
         unimplemented!()
     }
 }
