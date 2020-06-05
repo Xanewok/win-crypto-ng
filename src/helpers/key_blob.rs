@@ -34,8 +34,10 @@ impl<'a> DynTailView<'a> for RsaPrivateData {
         let bytes = self.as_ref();
         RsaPrivateView {
             pub_exp: &bytes[..input.cbPublicExp as usize],
-            modulus: &bytes
-                [input.cbPublicExp as usize..input.cbPublicExp as usize + input.cbModulus as usize],
+            modulus: &bytes[
+                input.cbPublicExp as usize..
+                input.cbPublicExp as usize + input.cbModulus as usize
+            ],
         }
     }
 }
@@ -117,6 +119,8 @@ where
     }
 }
 
+// TODO: Impl FromBytes for DynStructUnsized where T::Header: FromBytes
+
 impl<'a, T: DynStructParts<'a>> DynStructUnsized<'a, T> {
     fn as_parts(&'a self) -> (&'a T::Header, <T::Tail as DynTailView<'a>>::Output) {
         DynStruct::as_parts(self)
@@ -139,8 +143,6 @@ fn another<'a>(arg: &'a DynStructUnsized<'a, RsaPrivate>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn name() {
         use crate::asymmetric::{AsymmetricKey, Export, Rsa};
@@ -150,41 +152,41 @@ mod tests {
         super::test(unsafe { std::mem::transmute(blob.as_ref()) });
         super::another(unsafe { std::mem::transmute(blob.as_ref()) });
 
-        let blob = Box::leak(blob);
-        let tail_byte_count = blob.len() - std::mem::size_of::<BCRYPT_RSAKEY_BLOB>();
-        let raw = DynStructUnsized::from_raw_parts_mut(blob.as_mut_ptr().cast(), tail_byte_count);
-        let boxed = unsafe { Box::from_raw(raw) };
-        let (header, view) = boxed.as_parts();
-        dbg!(header.Magic);
-        dbg!(header.BitLength);
-        dbg!(view);
+        // let blob = Box::leak(blob);
+        // let tail_byte_count = blob.len() - std::mem::size_of::<BCRYPT_RSAKEY_BLOB>();
+        // let raw = DynStructUnsized::from_raw_parts_mut(blob.as_mut_ptr().cast(), tail_byte_count);
+        // let boxed = unsafe { Box::from_raw(raw) };
+        // let (header, view) = boxed.as_parts();
+        // dbg!(header.Magic);
+        // dbg!(header.BitLength);
+        // dbg!(view);
 
         panic!();
     }
 }
 
-impl DynStructUnsized<'_, RsaPrivate> {
-    pub fn from_raw_parts(data: *const BCRYPT_RSAKEY_BLOB, count: usize) -> *const Self {
-        use core::{mem, slice};
+// impl DynStructUnsized<'_, RsaPrivate> {
+//     pub fn from_raw_parts(data: *const BCRYPT_RSAKEY_BLOB, count: usize) -> *const Self {
+//         use core::{mem, slice};
 
-        // https://users.rust-lang.org/t/construct-fat-pointer-to-struct/29198/9
-        // Requirements of slice::from_raw_parts.
-        assert!(!data.is_null());
-        assert!(count * mem::size_of::<u8>() <= core::isize::MAX as usize);
+//         // https://users.rust-lang.org/t/construct-fat-pointer-to-struct/29198/9
+//         // Requirements of slice::from_raw_parts.
+//         assert!(!data.is_null());
+//         assert!(count * mem::size_of::<u8>() <= core::isize::MAX as usize);
 
-        let slice = unsafe { slice::from_raw_parts(data as *const (), count) };
-        slice as *const [()] as *const Self
-    }
+//         let slice = unsafe { slice::from_raw_parts(data as *const (), count) };
+//         slice as *const [()] as *const Self
+//     }
 
-    pub fn from_raw_parts_mut(data: *mut BCRYPT_RSAKEY_BLOB, count: usize) -> *mut Self {
-        use core::{mem, slice};
+//     pub fn from_raw_parts_mut(data: *mut BCRYPT_RSAKEY_BLOB, count: usize) -> *mut Self {
+//         use core::{mem, slice};
 
-        // https://users.rust-lang.org/t/construct-fat-pointer-to-struct/29198/9
-        // Requirements of slice::from_raw_parts.
-        assert!(!data.is_null());
-        assert!(count * mem::size_of::<u8>() <= core::isize::MAX as usize);
+//         // https://users.rust-lang.org/t/construct-fat-pointer-to-struct/29198/9
+//         // Requirements of slice::from_raw_parts.
+//         assert!(!data.is_null());
+//         assert!(count * mem::size_of::<u8>() <= core::isize::MAX as usize);
 
-        let slice = unsafe { slice::from_raw_parts_mut(data as *mut (), count) };
-        slice as *mut [()] as *mut Self
-    }
-}
+//         let slice = unsafe { slice::from_raw_parts_mut(data as *mut (), count) };
+//         slice as *mut [()] as *mut Self
+//     }
+// }

@@ -9,6 +9,7 @@ use winapi::shared::ntdef::{LPCWSTR, PUCHAR, ULONG, VOID};
 
 pub mod dyn_struct;
 pub use dyn_struct::DynStruct;
+pub mod key_blob;
 pub mod typed_blob;
 pub use typed_blob::TypedBlob;
 
