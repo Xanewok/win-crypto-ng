@@ -1,5 +1,6 @@
 //! Named properties support for CNG objects.
 
+use crate::helpers::FromBytes;
 use winapi::shared::bcrypt;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::ntdef::WCHAR;
@@ -7,7 +8,7 @@ use winapi::shared::ntdef::WCHAR;
 // Marker trait for any type that can be used as the CNG property.
 pub trait Property {
     const IDENTIFIER: &'static str;
-    type Value: ?Sized;
+    type Value: FromBytes + ?Sized;
 }
 
 /// [**BCRYPT_ALGORITHM_NAME**](https://docs.microsoft.com/windows/win32/seccng/cng-property-identifiers#BCRYPT_ALGORITHM_NAME)
