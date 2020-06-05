@@ -7,7 +7,9 @@
 //!
 //! > **NOTE**: This is currently a stub and should be expanded.
 
-use crate::helpers::{AlgoHandle, Handle, TypedBlob, WindowsString};
+use crate::helpers::dyn_struct::DynStruct;
+use crate::key::{ErasedKeyBlob};
+use crate::helpers::{AlgoHandle, Handle, WindowsString};
 use crate::key::{BlobType, KeyHandle};
 use crate::property::{AlgorithmName, EccCurveName};
 use crate::Result;
@@ -278,7 +280,7 @@ impl AsymmetricKey<Rsa, Private> {
 }
 
 pub trait Import<A: Algorithm, P: Parts> {
-    type Blob: Into<TypedBlob<BCRYPT_KEY_BLOB>>;
+    type Blob: Into<Box<DynStruct<ErasedKeyBlob<'_>>>>;
     fn import(
         algo: A,
         provider: &AsymmetricAlgorithm,
@@ -381,8 +383,8 @@ export_blobs!(Rsa, Private, RsaPrivate, BlobType::RsaPrivate);
 use crate::key::*;
 
 pub enum DsaPublicBlob {
-    V1(TypedBlob<DsaPublic>),
-    V2(TypedBlob<DsaPublicV2>),
+    V1(Box<DynStruct<DsaPublic>>),
+    V2(Box<DynStruct<DsaPublicV2>>),
 }
 
 impl Into<TypedBlob<BCRYPT_KEY_BLOB>> for DsaPublicBlob {

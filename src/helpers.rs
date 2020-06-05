@@ -7,13 +7,10 @@ use std::ptr::{null, null_mut};
 use winapi::shared::bcrypt::*;
 use winapi::shared::ntdef::{LPCWSTR, PUCHAR, ULONG, VOID};
 
-pub mod dyn_struct;
-pub use dyn_struct::DynStruct;
 pub mod bytes;
 pub use bytes::{AsBytes, FromBytes};
-pub mod key_blob;
-pub mod typed_blob;
-pub use typed_blob::TypedBlob;
+pub mod dyn_struct;
+pub use dyn_struct::DynStruct;
 
 pub trait Handle {
     fn as_ptr(&self) -> BCRYPT_HANDLE;
@@ -239,11 +236,5 @@ impl<T> AsRef<T> for MaybeUnsized<T> {
             Self::Inline(value) => &value,
             Self::Unsized(blob) => &blob,
         }
-    }
-}
-
-impl<T: ?Sized> AsBytes<'_> for TypedBlob<T> {
-    fn as_bytes(&self) -> &[u8] {
-        self.as_bytes()
     }
 }

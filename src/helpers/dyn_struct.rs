@@ -1,40 +1,50 @@
-use std::marker::PhantomData;
-
 use super::AsBytes;
 
-pub struct DynStructBox<'a, H: 'a, T: DynTail<'a, H>>(Box<[u8]>, PhantomData<&'a H>, PhantomData<T>);
-impl<'a, T, H: DynTail<'a, T>> AsBytes<'a> for DynStructBox<'a, T, H> {
+use winapi::shared::bcrypt::*;
+
+/// C-compatible dynamic inline structure.
+///
+/// Can be used to house data with a header structure of a statically known size
+/// but with trailing data of size dependent on the header field values.
+#[repr(C)]
+pub struct DynStruct<'a, T: DynStructParts<'a>>(T::Header, T::Tail);
+
+/// Couples both `Header` and `Tail` types used in a `DynStruct`.
+pub trait DynStructParts<'a> {
+    type Header;
+    type Tail: DynTailView<'a, Input = Self::Header> + AsBytes<'a> + ?Sized;
+}
+
+/// Given the aux. header data, reinterprets the tail bytes of a dynamic
+/// structure to a concrete structure.
+pub trait DynTailView<'a>: AsBytes<'a> {
+    type Input: ?Sized;
+    type Output;
+    fn view(&'a self, input: &'a Self::Input) -> Self::Output;
+}
+
+impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
+    pub fn as_parts(&'a self) -> (&'a T::Header, <T::Tail as DynTailView<'a>>::Output) {
+        let header = &self.0;
+        let view = self.1.view(header);
+        (header, view)
+    }
+
+    pub fn as_bytes(&'a self) -> &'a [u8] {
+        AsBytes::as_bytes(self)
+    }
+}
+
+impl<'a, T: DynStructParts<'a>> AsBytes<'a> for DynStruct<'a, T> {
     fn as_bytes(&self) -> &[u8] {
-        &self.0
+        let len = std::mem::size_of_val(self);
+        // SAFETY: DynStruct is C-compatible - header is assumed to be a
+        // POD that's #[repr(C)] and the tail implements AsBytes.
+        // Therefore, it's safe to view the entire allocation as bytes
+        unsafe {
+            std::slice::from_raw_parts(self as *const _ as *const u8 , len)
+        }
     }
-}
-
-unsafe impl<'a, H, T> DynStruct<'a, H, T> for DynStructBox<'a, H, T>
-    where
-    H: 'a,
-    T: DynTail<'a, H> {}
-
-impl<'a, T, H: DynTail<'a, T>> DynStructBox<'a, T, H> {
-    #[allow(dead_code)]
-    pub unsafe fn from_box(allocation: Box<[u8]>) -> Self {
-        Self(allocation, PhantomData, PhantomData)
-    }
-}
-
-pub unsafe trait DynStruct<'a, H: 'a, T: DynTail<'a, H>>: AsBytes<'a> {
-    fn header(&'a self) -> &'a H {
-        let storage = &self.as_bytes()[..std::mem::size_of::<H>()];
-        unsafe { &*storage.as_ptr().cast() }
-    }
-    fn tail(&'a self) -> T {
-        let tail = &self.as_bytes()[std::mem::size_of::<H>()..];
-        let header: &'a H = self.header();
-        DynTail::from_bytes(header, tail)
-    }
-}
-
-pub unsafe trait DynTail<'a, H> {
-    fn from_bytes(header: &'a H, bytes: &'a [u8]) -> Self;
 }
 
 /// Defines a trait for accessing dynamic fields (byte slices) for structs that
@@ -44,27 +54,23 @@ pub unsafe trait DynTail<'a, H> {
 #[macro_export]
 macro_rules! dyn_struct {
     (
-        struct $wrapper_ident: ident,
+        $(#[$wrapper_meta:meta])*
+        enum $wrapper_ident: ident {},
         header: $header: ty,
+        $(#[$ident_meta:meta])*
+        payload: #[repr(transparent)] struct $ident: ident([u8]),
         $(#[$outer:meta])*
-        tail: trait $ident: ident; struct $tail_ident: ident {
+        view: struct ref $tail_ident: ident {
             $(
                 $(#[$meta:meta])*
                 $field: ident [$($len: tt)*],
             )*
         }
     ) => {
-        $(#[$outer])*
-        pub trait $ident<'a>: $crate::helpers::AsBytes<'a> + AsRef<$header> {
-            dyn_struct! { ;
-                $(
-                    $(#[$meta])*
-                    $field [$($len)*],
-                )*
-            }
-        }
+        $(#[$wrapper_meta:meta])*
+        pub enum $wrapper_ident {}
 
-        #[derive(Debug)]
+        $(#[$outer])*
         pub struct $tail_ident<'a> {
             $(
                 $(#[$meta])*
@@ -72,17 +78,27 @@ macro_rules! dyn_struct {
             )*
         }
 
+        $(#[$ident_meta])*
         #[repr(transparent)]
-        pub struct $wrapper_ident($header);
-        impl AsRef<$header> for $wrapper_ident {
-            fn as_ref(&self) -> &$header {
+        pub struct $ident([u8]);
+        impl $crate::helpers::bytes::AsBytes<'_> for $ident {
+            fn as_bytes(&self) -> &[u8] {
                 &self.0
             }
         }
 
-        unsafe impl<'a> $crate::helpers::dyn_struct::DynTail<'a, $header> for $tail_ident<'a> {
+        impl<'a> $crate::helpers::dyn_struct::DynStructParts<'a> for $wrapper_ident {
+            type Header = $header;
+            type Tail = $ident;
+        }
+
+        impl<'a> $crate::helpers::dyn_struct::DynTailView<'a> for $ident {
+            type Input = $header;
+            type Output = $tail_ident<'a>;
+
             #[allow(unused_assignments)]
-            fn from_bytes<'b>(header: &'b $header, bytes: &'a [u8]) -> $tail_ident<'a> {
+            fn view(&'a self, header: &'a Self::Input) -> $tail_ident<'a> {
+                let bytes = $crate::helpers::bytes::AsBytes::as_bytes(self);
                 let mut offset = 0;
                 $(
                     let field_len = dyn_struct! { header, $($len)*};
@@ -96,66 +112,54 @@ macro_rules! dyn_struct {
             }
         }
 
-        impl $crate::helpers::TypedBlob<$wrapper_ident> {
+        impl $crate::helpers::dyn_struct::DynStruct<'_, $wrapper_ident> {
             #[allow(unused_assignments)]
-            pub fn from_parts(header: &$header, tail: &$tail_ident) -> Self {
+            pub fn clone_from_parts(header: &$header, tail: &$tail_ident) -> Box<Self> {
                 let header_len = std::mem::size_of_val(header);
-                let total_size: usize = header_len
-                $(
-                    + dyn_struct! { header, $($len)*}
-                )*;
+                let tail_len: usize = 0 $( + dyn_struct! { header, $($len)*} )*;
 
-                let mut boxed = vec![0u8; total_size].into_boxed_slice();
-                let header_as_bytes = unsafe { std::slice::from_raw_parts(
-                    header as *const _ as *const u8,
-                    header_len
-                ) };
+                // We assume that header is #[repr(C)] and that its alignment is
+                // the largest required alignment for its field.
+                // We need to pad the tail allocation
+                let align = std::mem::align_of_val(header);
+                let tail_padding = (align - (tail_len % align)) % align;
+
+                dbg!(header_len);
+                dbg!(tail_len);
+                dbg!(tail_padding);
+
+                let mut boxed = vec![0u8; header_len + tail_len + tail_padding].into_boxed_slice();
+                dbg!(boxed.len());
+
+                let header_as_bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        header as *const _ as *const u8,
+                        header_len
+                    )
+                };
                 &mut boxed[..header_len].copy_from_slice(header_as_bytes);
                 let mut offset = header_len;
                 $(
                     let field_len = dyn_struct! { header, $($len)*};
+                    dbg!(tail.$field, field_len);
                     &mut boxed[offset..offset + field_len].copy_from_slice(tail.$field);
                     offset += field_len;
                 )*
-                unsafe { $crate::helpers::TypedBlob::from_box(boxed) }
+
+                // Construct a custom slice-based DST
+                let ptr = Box::leak(boxed);
+                unsafe {
+                    let slice = std::slice::from_raw_parts_mut(ptr.as_mut_ptr(), tail_len);
+
+                    // NOTE: This implementation can't be generic for DynStruct
+                    // because the T::Tail isn't known to be vtable-compatible
+                    // with slice types (here we have newtypes around [u8])
+                    Box::from_raw(slice as *mut [u8] as *mut [()] as *mut Self)
+                }
             }
         }
     };
-    // Expand fields. Recursively expand each field, pushing the processed field
-    //  identifier to a queue which is later used to calculate field offset for
-    // subsequent fields
-    (
-        $($prev: ident,)* ;
-        $(#[$curr_meta:meta])*
-        $curr: ident [$($curr_len: tt)*],
-        $(
-            $(#[$field_meta:meta])*
-            $field: ident [$($field_len: tt)*],
-        )*
-    ) => {
-        $(#[$curr_meta])*
-        #[inline(always)]
-        fn $curr(&'a self) -> &'a [u8] {
-            let this = self.as_ref();
 
-            let offset = std::mem::size_of_val(this)
-                $(+ self.$prev().len())*;
-
-            let size: usize = dyn_struct! { this, $($curr_len)* };
-
-            &self.as_bytes()[offset..offset + size]
-        }
-        // Once expanded, push the processed ident and recursively expand other
-        // fields
-        dyn_struct! { $($prev,)* $curr, ;
-            $(
-                $(#[$field_meta])*
-                $field [$($field_len)*],
-            )*
-        }
-    };
-
-    ($($prev: ident,)* ; ) => {};
     // Accept either header member values or arbitrary expressions (e.g. numeric
     // constants)
     ($this: expr, $ident: ident) => { $this.$ident as usize };
@@ -163,90 +167,63 @@ macro_rules! dyn_struct {
 
 }
 
+dyn_struct! {
+    enum RsaPublic {},
+    header: BCRYPT_RSAKEY_BLOB,
+    payload: #[repr(transparent)] struct RsaPublicData([u8]),
+    /// All the fields are stored as a big-endian multiprecision integer.
+    /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
+    #[derive(Debug)]
+    view: struct ref RsaPublicTail {
+        pub_exp[cbPublicExp],
+        modulus[cbModulus],
+    }
+}
+
+dyn_struct! {
+    enum RsaPrivate {},
+    header: BCRYPT_RSAKEY_BLOB,
+    payload: #[repr(transparent)] struct RsaPrivateData([u8]),
+    /// All the fields are stored as a big-endian multiprecision integer.
+    /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
+    #[derive(Debug)]
+    view: struct ref RsaPrivateTail {
+        pub_exp[cbPublicExp],
+        modulus[cbModulus],
+        prime1[cbPrime1],
+        prime2[cbPrime2],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helpers::TypedBlob;
 
     #[test]
-    fn dyn_struct() {
+    fn test() {
         #[repr(C)]
-        #[derive(Debug, PartialEq)]
-        pub struct MyHeader {
-            count: u8,
-            some: u16,
-            another: u8,
-        }; // 6 bytes
-        #[derive(Debug)]
-        #[repr(C)]
-        struct MyDynStruct([u8; 12]);
+        pub struct Header { count: u16 }
         dyn_struct! {
-            struct MyDynStructBlob,
-            header: MyHeader,
-            tail: trait MyDynStructView; struct MyDynStructTail {
-                field1[count],
-                field2[4],
-            }
-        };
-
-        impl AsRef<MyHeader> for MyDynStruct {
-            fn as_ref(&self) -> &MyHeader {
-                let storage = &self.0[..std::mem::size_of::<MyHeader>()];
-                unsafe { &*storage.as_ptr().cast() }
+            enum MyDynStruct {},
+            header: Header,
+            payload: #[repr(transparent)] struct TailData([u8]),
+            view: struct ref TailView {
+                some_member[count], // Refers to run-time value of `count` field
             }
         }
-        impl AsBytes<'_> for MyDynStruct {
-            fn as_bytes(&self) -> &[u8] {
-                &self.0
-            }
-        }
-        impl MyDynStructView<'_> for MyDynStruct {}
 
-        let header = MyHeader {
-            count: 0x02,
-            some: 0xFFFF,
-            another: 0x03,
-        };
-        let dyn_struct = MyDynStruct([
-            0x2,  // MyHeader.count
-            0x00, // MyHeader.some (padding)
-            0xFF, 0xFF, // MyHeader.some
-            0x03, // MyHeader.another
-            0x00, // header padding to largest member alignment (MyHeader.some)
-            0xDD, 0xDD, // field1[count]
-            0xA, 0xB, 0xC, 0xD, // field2[4]
-            ]);
-            dbg!(std::mem::size_of::<MyHeader>());
-            assert_eq!(dyn_struct.header(), &header);
-            assert_eq!(dyn_struct.tail().field1, &[0xDD, 0xDD]);
-            assert_eq!(dyn_struct.tail().field2, &[0xA, 0xB, 0xC, 0xD]);
-
-        unsafe impl<'a> DynStruct<'a, MyHeader, MyDynStructTail<'a>> for MyDynStruct {}
-        dbg!(dyn_struct.header());
-        assert_eq!(dyn_struct.header(), dyn_struct.as_ref());
-        assert_eq!(dyn_struct.tail().field1, dyn_struct.field1());
-        assert_eq!(dyn_struct.tail().field2, dyn_struct.field2());
-
-        let raw = TypedBlob::<MyDynStructBlob>::from_parts(
-            &header,
-            &MyDynStructTail {
-                field1: &[0xDD, 0xDD],
-                field2: &[0xA, 0xB, 0xC, 0xD]
-            }
+        let inline = DynStruct::<MyDynStruct>::clone_from_parts(
+            &Header { count: 4 },
+            &TailView { some_member: &[1u8, 2, 3, 4] }
         );
-        // NOTE: The padding bytes' value is not defined and may change
-        assert_eq!(dyn_struct.0, raw.as_bytes());
+        assert_eq!(6, std::mem::size_of_val(&*inline));
 
-        let blob = unsafe { TypedBlob::<MyHeader>::from_box(Box::new(dyn_struct.0)) };
-        impl MyDynStructView<'_> for TypedBlob<MyHeader> {}
-        unsafe impl<'a> DynStruct<'a, MyHeader, MyDynStructTail<'a>> for TypedBlob<MyHeader> {}
-        impl AsRef<MyHeader> for MyHeader {
-            fn as_ref(&self) -> &MyHeader {
-                self
-            }
-        }
-        assert_eq!(blob.as_ref(), &header);
-        assert_eq!(blob.tail().field1, &[0xDD, 0xDD]);
-        assert_eq!(blob.tail().field2, &[0xA, 0xB, 0xC, 0xD]);
+        let inline = DynStruct::<MyDynStruct>::clone_from_parts(
+            &Header { count: 5 },
+            &TailView { some_member: &[1u8, 2, 3, 4, 5] }
+        );
+        // Account for trailing padding
+        assert_eq!(8, std::mem::size_of_val(&*inline));
+
     }
 }

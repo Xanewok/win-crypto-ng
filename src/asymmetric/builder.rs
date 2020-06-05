@@ -1,6 +1,6 @@
 //! Type-safe builders to generate various asymmetric keys.
 
-use crate::helpers::{Handle, TypedBlob, WindowsString};
+use crate::helpers::{DynStruct, Handle, WindowsString};
 use crate::key::{BlobType, KeyHandle};
 use crate::{Error, Result};
 use std::marker::PhantomData;
@@ -212,9 +212,9 @@ impl BuilderParams for () {}
 impl BuilderParams for BuilderOptions {
     fn set_param(&self, handle: BCRYPT_HANDLE, key_bits: u32) -> Result<()> {
         let (property, blob) = match self {
-            BuilderOptions::Dsa(params) => (BCRYPT_DSA_PARAMETERS, params.to_blob(key_bits)),
+            BuilderOptions::Dsa(params) => (BCRYPT_DSA_PARAMETERS, params.as_blob(key_bits)),
             BuilderOptions::Dh(params) => {
-                (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).into_inner())
+                (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).as_ref().as_bytes())
             }
         };
 
@@ -227,14 +227,14 @@ impl BuilderParams for DhParams {
         set_property(
             handle,
             BCRYPT_DH_PARAMETERS,
-            self.to_blob(key_bits).as_bytes(),
+            self.to_blob(key_bits).as_ref().as_bytes(),
         )
     }
 }
 
 impl BuilderParams for DsaParams {
     fn set_param(&self, handle: BCRYPT_HANDLE, key_bits: u32) -> Result<()> {
-        set_property(handle, BCRYPT_DSA_PARAMETERS, &self.to_blob(key_bits))
+        set_property(handle, BCRYPT_DSA_PARAMETERS, self.as_blob(key_bits))
     }
 }
 
@@ -297,10 +297,10 @@ pub struct DsaParamsV1 {
 }
 
 impl DsaParams {
-    fn to_blob(&self, key_bits: u32) -> Box<[u8]> {
+    fn as_blob(&self, key_bits: u32) -> &[u8] {
         match self {
-            DsaParams::V1(params) => params.to_blob(key_bits).into_inner(),
-            DsaParams::V2(params) => params.to_blob(key_bits).into_inner(),
+            DsaParams::V1(params) => params.to_blob(key_bits).as_ref().as_bytes(),
+            DsaParams::V2(params) => params.to_blob(key_bits).as_ref().as_bytes(),
         }
     }
 }
@@ -331,12 +331,12 @@ pub struct DsaParamsV2 {
 }
 
 impl DsaParamsV1 {
-    fn to_blob(&self, key_bits: u32) -> TypedBlob<DsaParameter> {
+    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DsaParameter>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DSA_PARAMETER_HEADER>();
         let length = header_len + key_bytes + key_bytes;
 
-        TypedBlob::<DsaParameter>::from_parts(
+        DynStruct::<DsaParameter>::clone_from_parts(
             &BCRYPT_DSA_PARAMETER_HEADER {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DSA_PARAMETERS_MAGIC,
@@ -354,12 +354,12 @@ impl DsaParamsV1 {
 }
 
 impl DsaParamsV2 {
-    fn to_blob(&self, key_bits: u32) -> TypedBlob<DsaParameterV2> {
+    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DsaParameterV2>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DSA_PARAMETER_HEADER_V2>();
         let length = header_len + key_bytes + key_bytes;
 
-        TypedBlob::<DsaParameterV2>::from_parts(
+        DynStruct::<DsaParameterV2>::clone_from_parts(
             &BCRYPT_DSA_PARAMETER_HEADER_V2 {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DSA_PARAMETERS_MAGIC_V2,
@@ -380,12 +380,12 @@ impl DsaParamsV2 {
 }
 
 impl DhParams {
-    fn to_blob(&self, key_bits: u32) -> TypedBlob<DhParameter> {
+    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DhParameter>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DH_PARAMETER_HEADER>();
         let length = header_len + key_bytes + key_bytes;
 
-        TypedBlob::<DhParameter>::from_parts(
+        DynStruct::<DhParameter>::clone_from_parts(
             &BCRYPT_DH_PARAMETER_HEADER {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DH_PARAMETERS_MAGIC,
@@ -527,33 +527,36 @@ impl KeyPairBuilder<'_> {
 use crate::dyn_struct;
 
 dyn_struct! {
-    struct DsaParameter,
+    enum DsaParameter {},
     header: BCRYPT_DSA_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    tail: trait DsaParameterView; struct DsaParameterViewTail {
+    payload: #[repr(transparent)] struct DsaParameterView([u8]),
+    view: struct ref DsaParameterViewTail {
         prime[cbKeyLength],
         generator[cbKeyLength],
     }
 }
 
 dyn_struct! {
-    struct DsaParameterV2,
+    enum DsaParameterV2 {},
     header: BCRYPT_DSA_PARAMETER_HEADER_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    tail: trait DsaParameterV2View; struct DsaParameterV2ViewTail {
+    payload: #[repr(transparent)] struct DsaParameterV2View([u8]),
+    view: struct ref DsaParameterV2ViewTail {
         prime[cbKeyLength],
         generator[cbKeyLength],
     }
 }
 
 dyn_struct! {
-    struct DhParameter,
+    enum DhParameter {},
     header: BCRYPT_DH_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_parameter_header
-    tail: trait DhParameterView; struct DhParameterViewTail {
+    payload: #[repr(transparent)] struct DhParameterView([u8]),
+    view: struct ref DhParameterViewTail {
         modulus[cbKeyLength],
         generator[cbKeyLength],
     }

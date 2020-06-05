@@ -1,7 +1,7 @@
 //! Cryptographic key handle
 
 use crate::dyn_struct;
-use crate::helpers::{Handle, TypedBlob};
+use crate::helpers::Handle;
 use std::ptr::null_mut;
 use std::convert::TryFrom;
 use winapi::shared::bcrypt::*;
@@ -128,12 +128,49 @@ impl<'a> TryFrom<&'a str> for BlobType {
     }
 }
 
+use crate::helpers::dyn_struct::{DynStruct, DynStructParts};
+
+trait KeyData<'a, T>
+where
+    T: DynStructParts<'a>,
+    T::Header: ExtendsBcryptKeyBlob,
+{
+    // const MAGIC: ULONG;
+}
+
+impl<'a, T> KeyData<'a, T> for DynStruct<'a, T>
+where
+    T: DynStructParts<'a>,
+    T::Header: ExtendsBcryptKeyBlob {}
+
+unsafe trait ExtendsBcryptKeyBlob {
+    fn magic(&self) -> ULONG;
+}
+unsafe impl ExtendsBcryptKeyBlob for BCRYPT_RSAKEY_BLOB {
+    fn magic(&self) -> ULONG {
+        self.Magic
+    }
+}
+
+impl<'a, T: DynStructParts<'a>> KeyData<'a, T> for RsaPrivate where
+T::Header: ExtendsBcryptKeyBlob {
+    // const MAGIC: ULONG = BCRYPT_RSAPRIVATE_MAGIC;
+}
+
+// #[repr(C)]
+// struct KeyData<'a, K>(K::Header, K::Tail)
+// where
+//     K: KeyBlob<'a>,
+//     <K as DynStructParts<'a>>::Header: ExtendsBcryptKeyBlob;
+
 /// Marker trait for values containing CNG key blob types.
 pub trait KeyBlob {
     const MAGIC: ULONG;
     const TYPE: &'static str;
     type Value;
 }
+
+
 
 impl<T: KeyBlob> From<TypedBlob<T>> for TypedBlob<BCRYPT_KEY_BLOB> {
     fn from(typed: TypedBlob<T>) -> Self {
@@ -164,11 +201,11 @@ macro_rules! newtype_key_blob {
                     &self.0
                 }
             }
-            impl KeyBlob for $name {
-                const MAGIC: ULONG = $magic;
-                const TYPE: &'static str = $type;
-                type Value = $value;
-            }
+            // impl KeyBlob for $name {
+            //     const MAGIC: ULONG = $magic;
+            //     const TYPE: &'static str = $type;
+            //     type Value = $value;
+            // }
 
             impl TryFrom<TypedBlob<BCRYPT_KEY_BLOB>> for TypedBlob<$name> {
                 type Error = TypedBlob<BCRYPT_KEY_BLOB>;
@@ -224,54 +261,67 @@ newtype_key_blob!(
     EcdsaP521Private, BCRYPT_ECCPRIVATE_BLOB, BCRYPT_ECDSA_PRIVATE_P521_MAGIC, BCRYPT_ECCKEY_BLOB
 );
 
-use crate::helpers::DynStruct;
-unsafe impl<'a> DynStruct<'a, BCRYPT_RSAKEY_BLOB, RsaKeyPublicViewTail<'a>> for TypedBlob<RsaPublic> {}
-unsafe impl<'a> DynStruct<'a, BCRYPT_RSAKEY_BLOB, RsaKeyBlobPrivateTail<'a>> for TypedBlob<RsaPrivate> {}
-impl RsaKeyPublicView<'_> for TypedBlob<RsaPublic> {}
-impl RsaKeyBlobPrivate<'_> for TypedBlob<RsaPrivate> {}
-impl RsaKeyBlobFullPrivate<'_> for TypedBlob<RsaFullPrivate> {}
-impl DsaKeyBlobPublic<'_> for TypedBlob<DsaPublic> {}
-impl DsaKeyBlobPrivate<'_> for TypedBlob<DsaPrivate> {}
-impl DsaKeyBlobPublicV2<'_> for TypedBlob<DsaPublicV2> {}
-impl DsaKeyBlobPrivateV2<'_> for TypedBlob<DsaPrivateV2> {}
-impl DhKeyBlobPublic<'_> for TypedBlob<DhPublic> {}
-impl DhKeyBlobPrivate<'_> for TypedBlob<DhPrivate> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdhPublic> {}
-unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPublicTail<'a>> for TypedBlob<EcdhPublic> {}
-unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPrivateTail<'a>> for TypedBlob<EcdhPrivate> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhPrivate> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP256Public> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP256Private> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP384Public> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP384Private> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP521Public> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP521Private> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP256Public> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP256Private> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP384Public> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP384Private> {}
-impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP521Public> {}
-unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPublicTail<'a>> for TypedBlob<EcdsaP521Public> {}
-unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPrivateTail<'a>> for TypedBlob<EcdsaP521Private> {}
-impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP521Private> {}
+// use crate::helpers::DynStruct;
+// unsafe impl<'a> DynStruct<'a, BCRYPT_RSAKEY_BLOB, RsaKeyPublicViewTail<'a>> for TypedBlob<RsaPublic> {}
+// unsafe impl<'a> DynStruct<'a, BCRYPT_RSAKEY_BLOB, RsaKeyBlobPrivateTail<'a>> for TypedBlob<RsaPrivate> {}
+// impl RsaKeyPublicView<'_> for TypedBlob<RsaPublic> {}
+// impl RsaKeyBlobPrivate<'_> for TypedBlob<RsaPrivate> {}
+// impl RsaKeyBlobFullPrivate<'_> for TypedBlob<RsaFullPrivate> {}
+// impl DsaKeyBlobPublic<'_> for TypedBlob<DsaPublic> {}
+// impl DsaKeyBlobPrivate<'_> for TypedBlob<DsaPrivate> {}
+// impl DsaKeyBlobPublicV2<'_> for TypedBlob<DsaPublicV2> {}
+// impl DsaKeyBlobPrivateV2<'_> for TypedBlob<DsaPrivateV2> {}
+// impl DhKeyBlobPublic<'_> for TypedBlob<DhPublic> {}
+// impl DhKeyBlobPrivate<'_> for TypedBlob<DhPrivate> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdhPublic> {}
+// unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPublicTail<'a>> for TypedBlob<EcdhPublic> {}
+// unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPrivateTail<'a>> for TypedBlob<EcdhPrivate> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhPrivate> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP256Public> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP256Private> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP384Public> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP384Private> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdhP521Public> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdhP521Private> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP256Public> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP256Private> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP384Public> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP384Private> {}
+// impl EccKeyBlobPublic<'_> for TypedBlob<EcdsaP521Public> {}
+// unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPublicTail<'a>> for TypedBlob<EcdsaP521Public> {}
+// unsafe impl<'a> DynStruct<'a, BCRYPT_ECCKEY_BLOB, EccKeyBlobPrivateTail<'a>> for TypedBlob<EcdsaP521Private> {}
+// impl EccKeyBlobPrivate<'_> for TypedBlob<EcdsaP521Private> {}
 
 dyn_struct! {
-    struct RsaKeyPublicBlob,
+    enum ErasedKeyBlob {},
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    tail: trait RsaKeyPublicView; struct RsaKeyPublicViewTail {
+    payload: #[repr(transparent)] struct ErasedKeyBlobData([u8]),
+    view: struct ref ErasedKeyBlobView {
+    }
+}
+
+
+dyn_struct! {
+    enum RsaKeyPublicBlob {},
+    header: BCRYPT_RSAKEY_BLOB,
+    /// All the fields are stored as a big-endian multiprecision integer.
+    /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
+    payload: #[repr(transparent)] struct RsaPublicData([u8]),
+    view: struct ref RsaKeyPublicViewTail {
         pub_exp[cbPublicExp],
         modulus[cbModulus],
     }
 }
 
 dyn_struct! {
-    struct RsaKeyPrivateBlob,
+    enum RsaKeyPrivateBlob {},
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    tail: trait RsaKeyBlobPrivate; struct RsaKeyBlobPrivateTail {
+    payload: #[repr(transparent)] struct RsaKeyBlobPrivate([u8]),
+    view: struct ref RsaKeyBlobPrivateTail {
         pub_exp[cbPublicExp],
         modulus[cbModulus],
         prime1[cbPrime1],
@@ -280,11 +330,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct RsaKeyFullPrivateBlob,
+    enum RsaKeyFullPrivateBlob {},
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    tail: trait RsaKeyBlobFullPrivate; struct RsaKeyBlobFullPrivateTail {
+    payload: #[repr(transparent)] struct RsaKeyBlobFullPrivate([u8]),
+    view: struct ref RsaKeyBlobFullPrivateTail {
         pub_exp[cbPublicExp],
         modulus[cbModulus],
         prime1[cbPrime1],
@@ -297,12 +348,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DhKeyPublicBlob,
+    enum DhKeyPublicBlob {},
     header: BCRYPT_DH_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
-    #[allow(non_snake_case)]
-    tail: trait DhKeyBlobPublic; struct DhKeyBlobPublicTail {
+    payload: #[repr(transparent)] struct DhKeyBlobPublic([u8]),
+    view: struct ref DhKeyBlobPublicTail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -310,12 +361,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DhKeyPrivateBlob,
+    enum DhKeyPrivateBlob {},
     header: BCRYPT_DH_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
-    #[allow(non_snake_case)]
-    tail: trait DhKeyBlobPrivate; struct DhKeyBlobPrivateTail {
+    payload: #[repr(transparent)] struct DhKeyBlobPrivate([u8]),
+    view: struct ref DhKeyBlobPrivateTail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -324,11 +375,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DsaKeyPublicBlob,
+    enum DsaKeyPublicBlob {},
     header: BCRYPT_DSA_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
-    tail: trait DsaKeyBlobPublic; struct DsaKeyBlobPublicTail {
+    payload: #[repr(transparent)] struct DsaKeyBlobPublic([u8]),
+    view: struct ref DsaKeyBlobPublicTail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -336,11 +388,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DsaKeyPrivateBlob,
+    enum DsaKeyPrivateBlob {},
     header: BCRYPT_DSA_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
-    tail: trait DsaKeyBlobPrivate; struct DsaKeyBlobPrivateTail {
+    payload: #[repr(transparent)] struct DsaKeyBlobPrivate([u8]),
+    view: struct ref DsaKeyBlobPrivateTail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -349,11 +402,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DsaKeyPublicV2Blob,
+    enum DsaKeyPublicV2Blob {},
     header: BCRYPT_DSA_KEY_BLOB_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
-    tail: trait DsaKeyBlobPublicV2; struct DsaKeyBlobPublicV2Tail {
+    payload: #[repr(transparent)] struct DsaKeyBlobPublicV2([u8]),
+    view: struct ref DsaKeyBlobPublicV2Tail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -361,11 +415,12 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct DsaKeyPrivateV2Blob,
+    enum DsaKeyPrivateV2Blob {},
     header: BCRYPT_DSA_KEY_BLOB_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
-    tail: trait DsaKeyBlobPrivateV2; struct DsaKeyBlobPrivateV2Tail {
+    payload: #[repr(transparent)] struct DsaKeyBlobPrivateV2([u8]),
+    view: struct ref DsaKeyBlobPrivateV2Tail {
         modulus[cbKey],
         generator[cbKey],
         public[cbKey],
@@ -374,22 +429,24 @@ dyn_struct! {
 }
 
 dyn_struct! {
-    struct EccKeyPublicBlob,
+    enum EccKeyPublicBlob {},
     header: BCRYPT_ECCKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
-    tail: trait EccKeyBlobPublic; struct EccKeyBlobPublicTail {
+    payload: #[repr(transparent)] struct EccKeyBlobPublic([u8]),
+    view: struct ref EccKeyBlobPublicTail {
         x[cbKey],
         y[cbKey],
     }
 }
 
 dyn_struct! {
-    struct EccKeyPrivateBlob,
+    enum EccKeyPrivateBlob {},
     header: BCRYPT_ECCKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
-    tail: trait EccKeyBlobPrivate; struct EccKeyBlobPrivateTail {
+    payload: #[repr(transparent)] struct EccKeyBlobPrivate([u8]),
+    view: struct ref EccKeyBlobPrivateTail {
         x[cbKey],
         y[cbKey],
         d[cbKey],
