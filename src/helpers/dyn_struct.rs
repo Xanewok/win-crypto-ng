@@ -7,34 +7,37 @@ use winapi::shared::bcrypt::*;
 /// Can be used to house data with a header structure of a statically known size
 /// but with trailing data of size dependent on the header field values.
 #[repr(C)]
-#[derive(Debug)]
-pub struct DynStruct<'a, T: DynStructParts<'a> + ?Sized>(pub(crate) T::Header, T::Tail);
+// #[derive(Debug)]
+pub struct DynStruct<'a, T: DynStructParts<'a>>(pub(crate) T::Header, [u8]);
 
 /// Couples both `Header` and `Tail` types used in a `DynStruct`.
 pub trait DynStructParts<'a> {
     type Header;
-    type Tail: DynTailView<'a, Input = Self::Header> + AsBytes<'a> + ?Sized;
+    // type TailView: DynTailView<'a, Header = Self::Header>
+    // type Tail: 'a;
+    type Tail;
+    fn view(header: &'a Self::Header, tail: &'a [u8]) -> Self::Tail;
+    // type Tail: DynTailView<'a, Header = <Self as DynStructParts<'a>>::Header> + AsBytes<'a> + ?Sized;
 }
 
-/// Given the aux. header data, reinterprets the tail bytes of a dynamic
-/// structure to a concrete structure.
-pub trait DynTailView<'a>: AsBytes<'a> {
-    type Input: ?Sized;
-    type Output;
-    fn view(&'a self, input: &'a Self::Input) -> Self::Output;
-}
+// /// Given the aux. header data, reinterprets the tail bytes of a dynamic
+// /// structure to a concrete structure.
+// pub trait DynTailView<'a> {
+//     type Header: ?Sized;
+//     type Output;
+//     fn view(header: &'a Self::Header, tail: &'a [u8]) -> Self::Tail;
+// }
 
 impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
     pub fn header(&self) -> &T::Header {
         &self.0
     }
 
-    pub fn view(&'a self) -> <T::Tail as DynTailView<'a>>::Output {
-        let header = self.header();
-        self.1.view(header)
+    pub fn view(&'a self) -> T::Tail {
+        T::view(&self.0, &self.1)
     }
 
-    pub fn as_parts(&'a self) -> (&'a T::Header, <T::Tail as DynTailView<'a>>::Output) {
+    pub fn as_parts(&'a self) -> (&'a T::Header, T::Tail) {
         let header = self.header();
         let view = self.view();
         (header, view)
@@ -99,16 +102,12 @@ macro_rules! dyn_struct {
 
         impl<'a> $crate::helpers::dyn_struct::DynStructParts<'a> for $wrapper_ident {
             type Header = $header;
-            type Tail = $ident;
-        }
-
-        impl<'a> $crate::helpers::dyn_struct::DynTailView<'a> for $ident {
-            type Input = $header;
-            type Output = $tail_ident<'a>;
+            type Tail = $tail_ident<'a>;
 
             #[allow(unused_assignments)]
-            fn view(&'a self, header: &'a Self::Input) -> $tail_ident<'a> {
-                let bytes = $crate::helpers::bytes::AsBytes::as_bytes(self);
+            fn view(header: &'a Self::Header, tail: &'a [u8]) -> $tail_ident<'a> {
+                // let bytes = $crate::helpers::bytes::AsBytes::as_bytes(self);
+                let bytes = tail;
                 let mut offset = 0;
                 $(
                     let field_len = dyn_struct! { header, $($len)*};
@@ -121,6 +120,26 @@ macro_rules! dyn_struct {
                 }
             }
         }
+
+        // impl<'a> $crate::helpers::dyn_struct::DynTailView<'a> for $ident {
+        //     type Header = $header;
+        //     type Output = $tail_ident<'a>;
+
+        //     #[allow(unused_assignments)]
+        //     fn view(&'a self, header: &'a Self::Header) -> $tail_ident<'a> {
+        //         let bytes = $crate::helpers::bytes::AsBytes::as_bytes(self);
+        //         let mut offset = 0;
+        //         $(
+        //             let field_len = dyn_struct! { header, $($len)*};
+        //             let $field: &'a [u8] = &bytes[offset..offset + field_len];
+        //             offset += field_len;
+        //         )*
+
+        //         $tail_ident {
+        //             $($field,)*
+        //         }
+        //     }
+        // }
 
         impl $crate::helpers::dyn_struct::DynStruct<'_, $wrapper_ident> {
             #[allow(unused_assignments)]
