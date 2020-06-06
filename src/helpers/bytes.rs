@@ -11,7 +11,7 @@ fn _check_ref_safe<T>(ptr: *const T) -> Result<(), ()> {
 }
 
 pub trait AsBytes<'a> {
-    fn as_bytes(&'a self) -> &'a [u8];
+    fn as_bytes(&self) -> &[u8];
 }
 
 // TODO: Add error handling

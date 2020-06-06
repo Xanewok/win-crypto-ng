@@ -7,7 +7,8 @@ use winapi::shared::bcrypt::*;
 /// Can be used to house data with a header structure of a statically known size
 /// but with trailing data of size dependent on the header field values.
 #[repr(C)]
-pub struct DynStruct<'a, T: DynStructParts<'a>>(T::Header, T::Tail);
+#[derive(Debug)]
+pub struct DynStruct<'a, T: DynStructParts<'a> + ?Sized>(pub(crate) T::Header, T::Tail);
 
 /// Couples both `Header` and `Tail` types used in a `DynStruct`.
 pub trait DynStructParts<'a> {
@@ -24,13 +25,22 @@ pub trait DynTailView<'a>: AsBytes<'a> {
 }
 
 impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
+    pub fn header(&self) -> &T::Header {
+        &self.0
+    }
+
+    pub fn view(&'a self) -> <T::Tail as DynTailView<'a>>::Output {
+        let header = self.header();
+        self.1.view(header)
+    }
+
     pub fn as_parts(&'a self) -> (&'a T::Header, <T::Tail as DynTailView<'a>>::Output) {
-        let header = &self.0;
-        let view = self.1.view(header);
+        let header = self.header();
+        let view = self.view();
         (header, view)
     }
 
-    pub fn as_bytes(&'a self) -> &'a [u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         AsBytes::as_bytes(self)
     }
 }
@@ -67,7 +77,7 @@ macro_rules! dyn_struct {
             )*
         }
     ) => {
-        $(#[$wrapper_meta:meta])*
+        $(#[$wrapper_meta])*
         pub enum $wrapper_ident {}
 
         $(#[$outer])*
@@ -146,14 +156,33 @@ macro_rules! dyn_struct {
                     offset += field_len;
                 )*
 
+                Self::from_boxed(boxed)
+            }
+        }
+
+        // NOTE: This implementation can't be generic for DynStruct
+        // because the T::Tail isn't known to be vtable-compatible
+        // with slice types (here we have newtypes around [u8])
+        impl $crate::helpers::dyn_struct::DynStruct<'_, $wrapper_ident> {
+            pub fn from_boxed(boxed: Box<[u8]>) -> Box<Self> {
+                dbg!(&boxed);
+                let hehe: &BCRYPT_ECCKEY_BLOB = unsafe { std::mem::transmute(boxed.as_ref().as_ptr())};
+                dbg!(hehe.dwMagic);
+                dbg!(hehe.cbKey);
+                eprintln!("Boxed len is {}", boxed.len());
+                eprintln!("Align of header {} is: {}", stringify!($header), std::mem::align_of::<$header>());
+                
+                // TODO: Calculate padding for every field
+                // Every field is padded except for the last one?
+                // assert_eq!(boxed.len() % std::mem::align_of::<$header>(), 0);
+                assert!(boxed.len() >= std::mem::size_of::<$header>());
+
+                let tail_len = boxed.len() - std::mem::size_of::<$header>();
                 // Construct a custom slice-based DST
                 let ptr = Box::leak(boxed);
                 unsafe {
                     let slice = std::slice::from_raw_parts_mut(ptr.as_mut_ptr(), tail_len);
 
-                    // NOTE: This implementation can't be generic for DynStruct
-                    // because the T::Tail isn't known to be vtable-compatible
-                    // with slice types (here we have newtypes around [u8])
                     Box::from_raw(slice as *mut [u8] as *mut [()] as *mut Self)
                 }
             }

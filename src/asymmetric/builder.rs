@@ -1,5 +1,6 @@
 //! Type-safe builders to generate various asymmetric keys.
 
+use crate::key::ErasedKeyBlob;
 use crate::helpers::{DynStruct, Handle, WindowsString};
 use crate::key::{BlobType, KeyHandle};
 use crate::{Error, Result};
@@ -214,7 +215,8 @@ impl BuilderParams for BuilderOptions {
         let (property, blob) = match self {
             BuilderOptions::Dsa(params) => (BCRYPT_DSA_PARAMETERS, params.as_blob(key_bits)),
             BuilderOptions::Dh(params) => {
-                (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).as_ref().as_bytes())
+                todo!()
+                // (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).as_ref().as_bytes())
             }
         };
 
@@ -298,10 +300,11 @@ pub struct DsaParamsV1 {
 
 impl DsaParams {
     fn as_blob(&self, key_bits: u32) -> &[u8] {
-        match self {
-            DsaParams::V1(params) => params.to_blob(key_bits).as_ref().as_bytes(),
-            DsaParams::V2(params) => params.to_blob(key_bits).as_ref().as_bytes(),
-        }
+        todo!()
+        // match self {
+        //     DsaParams::V1(params) => params.to_blob(key_bits).as_ref().as_bytes(),
+        //     DsaParams::V2(params) => params.to_blob(key_bits).as_ref().as_bytes(),
+        // }
     }
 }
 
@@ -454,12 +457,12 @@ impl KeyPair {
         })
     }
 
-    pub fn import(
+    pub fn import<'a>(
         provider: &AsymmetricAlgorithm,
-        blob: TypedBlob<BCRYPT_KEY_BLOB>,
+        key_data: &DynStruct<'a, ErasedKeyBlob>,
         no_validate_public: bool,
     ) -> Result<Self> {
-        let blob_type = blob.to_type().ok_or(Error::InvalidParameter)?;
+        let blob_type = key_data.blob_type().ok_or(Error::InvalidParameter)?;
         let property = WindowsString::from_str(blob_type.as_value());
 
         let mut handle = KeyHandle::default();
@@ -469,8 +472,8 @@ impl KeyPair {
                 null_mut(),
                 property.as_ptr(),
                 handle.as_mut_ptr(),
-                blob.as_bytes().as_ptr() as *mut _,
-                blob.as_bytes().len() as u32,
+                key_data.as_bytes().as_ptr() as *mut _,
+                key_data.as_bytes().len() as u32,
                 if no_validate_public {
                     BCRYPT_NO_KEY_VALIDATION
                 } else {
@@ -481,7 +484,7 @@ impl KeyPair {
         .map(|_| KeyPair(handle))
     }
 
-    pub fn export(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<TypedBlob<BCRYPT_KEY_BLOB>> {
+    pub fn export<'a>(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<'a, ErasedKeyBlob>>> {
         let property = WindowsString::from_str(kind.as_value());
 
         let mut bytes: ULONG = 0;
@@ -497,6 +500,7 @@ impl KeyPair {
             ))?;
         }
         let mut blob = vec![0u8; bytes as usize].into_boxed_slice();
+        eprintln!("Asked to allocate {} bytes", bytes);
 
         unsafe {
             Error::check(BCryptExportKey(
@@ -510,7 +514,7 @@ impl KeyPair {
             ))?;
         }
 
-        Ok(unsafe { TypedBlob::from_box(blob) })
+        Ok(DynStruct::<'a, ErasedKeyBlob>::from_boxed(blob))
     }
 }
 
