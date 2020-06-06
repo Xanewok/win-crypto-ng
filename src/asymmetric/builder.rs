@@ -535,7 +535,6 @@ dyn_struct! {
     header: BCRYPT_DSA_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    payload: #[repr(transparent)] struct DsaParameterView([u8]),
     view: struct ref DsaParameterViewTail {
         prime[cbKeyLength],
         generator[cbKeyLength],
@@ -547,7 +546,6 @@ dyn_struct! {
     header: BCRYPT_DSA_PARAMETER_HEADER_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_parameter_header
-    payload: #[repr(transparent)] struct DsaParameterV2View([u8]),
     view: struct ref DsaParameterV2ViewTail {
         prime[cbKeyLength],
         generator[cbKeyLength],
@@ -559,7 +557,6 @@ dyn_struct! {
     header: BCRYPT_DH_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_parameter_header
-    payload: #[repr(transparent)] struct DhParameterView([u8]),
     view: struct ref DhParameterViewTail {
         modulus[cbKeyLength],
         generator[cbKeyLength],

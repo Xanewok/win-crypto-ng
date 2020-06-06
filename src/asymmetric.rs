@@ -502,15 +502,16 @@ mod tests {
 
         let key = AsymmetricKey::builder(Ecdsa(NistP521)).build()?;
         let blob = key.export().unwrap();
-        dbg!(blob.view().x.len());
-        dbg!(blob.view().y.len());
-        dbg!(blob.view().d.len());
+        dbg!(blob.x().len());
+        dbg!(blob.y().len());
+        dbg!(blob.d().len());
 
-        // let key = AsymmetricKey::builder(Ecdh(Curve25519)).build()?;
-        // let blob = key.export()?;
-        // dbg!(blob.view().x.len());
-        // dbg!(blob.view().y.len());
-        // dbg!(blob.view().d.len());
+        let key = AsymmetricKey::builder(Ecdh(Curve25519)).build()?;
+        let blob = key.export()?;
+        dbg!(blob.x().len());
+        dbg!(blob.y().len());
+        dbg!(blob.d().len());
+        panic!();
         Ok(())
     }
 }

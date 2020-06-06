@@ -178,12 +178,34 @@ pub trait KeyBlob: Sized {
 
     // Works around not being able to implement TryFrom in generic ('a) contexts
     fn from_erased<'a>(
-        erased: Box<DynStruct<'a, ErasedKeyBlob>>
+        boxed: Box<DynStruct<'a, ErasedKeyBlob>>
     ) -> std::result::Result<
             Box<DynStruct<'a, Self>>,
             Box<DynStruct<'a, ErasedKeyBlob>>
         >
-        where Self: crate::helpers::dyn_struct::DynStructParts<'a>;
+        where Self: crate::helpers::dyn_struct::DynStructParts<'a>,
+    {
+        let accepts_all = Self::VALID_MAGIC == &[];
+        if accepts_all || Self::VALID_MAGIC.iter().any(|&x| x == boxed.magic()) {
+            // Adjust the length component
+            let header_len = std::mem::size_of::<<Self as DynStructParts>::Header>();
+            let len = std::mem::size_of_val(boxed.as_ref());
+            let tail_len = len - header_len;
+
+            // Construct a custom slice-based DST
+            let ptr = Box::into_raw(boxed);
+            Ok(unsafe {
+                let slice = std::slice::from_raw_parts_mut(
+                    ptr as *mut (),
+                    tail_len
+                );
+
+                Box::from_raw(slice as *mut[()] as *mut DynStruct<'a, Self>)
+            })
+        } else {
+            Err(boxed)
+        }
+    }
 }
 
 // impl<T: KeyBlob> From<TypedBlob<T>> for TypedBlob<BCRYPT_KEY_BLOB> {
@@ -195,34 +217,10 @@ pub trait KeyBlob: Sized {
 //     }
 // }
 
-// TODO: This is a big, big mess.
-// Currently, the `newtype_key_blob` macro defines a dynamic hierarchy for key
-// blob types, introducing its own transparent newtypes to be used in tandem
-// with `TypedBlob`.
-// However, `dyn_struct!` also does that to facilitate creating typed blobs from
-// both header and tail parts (using `from_parts` function).
-// Ideally we shouldn't use the typed blobs or the transparent newtypes and use
-// regular Rust DSTs coupled with unsized enums and explicit discriminants but
-// since Rust doesn't properly support the three combined... ¯\_(ツ)_/¯
-
 macro_rules! newtype_key_blob {
     // ($($name: ident, $type: expr, $tt, $value: ty),*) => {
     ($($name: ident, $blob: expr, [$($val: expr),*]),*) => {
         $(
-            // #[repr(transparent)]
-            // pub struct $name($value);
-            // impl AsRef<$value> for $name {
-            //     fn as_ref(&self) -> &$value {
-            //         &self.0
-            //     }
-            // }
-
-            // impl KeyBlob for $name {
-            //     const MAGIC: ULONG = $magic;
-            //     const TYPE: &'static str = $type;
-            //     type Value = $value;
-            // }
-
             impl<'a> AsRef<DynStruct<'a, ErasedKeyBlob>> for DynStruct<'a, $name> {
                 fn as_ref(&self) -> &DynStruct<'a, ErasedKeyBlob> {
                     // Adjust the length component
@@ -235,9 +233,10 @@ macro_rules! newtype_key_blob {
                             tail_len
                         )
                     };
-
+                    // Construct a custom slice-based DST
                     // SAFETY:
-                    // 1. DST "vtable" metadata correctness is checked by the compiler
+                    // 1. Compiler enforces compatibility of DST pointer metadata
+                    //    (so our DST wide pointer has the same layout as slice pointer)
                     // 2. The lifetime of both references is the same
                     unsafe { &*(slice as *const [()] as * const DynStruct<'a, ErasedKeyBlob>) }
                 }
@@ -246,41 +245,6 @@ macro_rules! newtype_key_blob {
             impl KeyBlob for $name {
                 const VALID_MAGIC: &'static [ULONG] = &[$($val),*];
                 const BLOB_TYPE: BlobType = $blob;
-
-                // Works around not being able to implement TryFrom in generic
-                // ('a) contexts
-                // NOTE: Can't be implemented as a default trait function due to
-                // possible vtable mismatch (we can't guarantee T::Tail to be
-                // layout compatible with [u8] via trait bounds)
-                fn from_erased<'a>(
-                    boxed: Box<DynStruct<'a, ErasedKeyBlob>>
-                ) -> std::result::Result<
-                        Box<DynStruct<'a, Self>>,
-                        Box<DynStruct<'a, ErasedKeyBlob>>
-                    >
-                    where Self: crate::helpers::dyn_struct::DynStructParts<'a>,
-                {
-                    let accepts_all = Self::VALID_MAGIC == &[];
-                    if accepts_all || Self::VALID_MAGIC.iter().any(|&x| x == boxed.magic()) {
-                        // Adjust the length component
-                        let header_len = std::mem::size_of::<<Self as DynStructParts>::Header>();
-                        let len = std::mem::size_of_val(boxed.as_ref());
-                        let tail_len = len - header_len;
-
-                        // Construct a custom slice-based DST
-                        let ptr = Box::into_raw(boxed);
-                        Ok(unsafe {
-                            let slice = std::slice::from_raw_parts_mut(
-                                ptr as *mut (),
-                                tail_len
-                            );
-
-                            Box::from_raw(slice as *mut[()] as *mut DynStruct<'a, Self>)
-                        })
-                    } else {
-                        Err(boxed)
-                    }
-                }
             }
 
             // // FFS Generic impl says fuck you
@@ -387,19 +351,16 @@ dyn_struct! {
     header: BCRYPT_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    payload: #[repr(transparent)] struct ErasedKeyBlobData([u8]),
     view: struct ref ErasedKeyBlobView {
         phantom[0],
     }
 }
-
 
 dyn_struct! {
     enum RsaKeyPublicBlob {},
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    payload: #[repr(transparent)] struct RsaPublicData([u8]),
     view: struct ref RsaKeyPublicViewTail {
         pub_exp[cbPublicExp],
         modulus[cbModulus],
@@ -412,8 +373,6 @@ dyn_struct! {
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    #[derive(Debug)]
-    payload: #[repr(transparent)] struct RsaKeyBlobPrivate([u8]),
     #[derive(Debug)]
     view: struct ref RsaKeyBlobPrivateTail {
         pub_exp[cbPublicExp],
@@ -428,7 +387,6 @@ dyn_struct! {
     header: BCRYPT_RSAKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    payload: #[repr(transparent)] struct RsaKeyBlobFullPrivate([u8]),
     view: struct ref RsaKeyBlobFullPrivateTail {
         pub_exp[cbPublicExp],
         modulus[cbModulus],
@@ -446,7 +404,6 @@ dyn_struct! {
     header: BCRYPT_DH_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
-    payload: #[repr(transparent)] struct DhKeyBlobPublic([u8]),
     view: struct ref DhKeyBlobPublicTail {
         modulus[cbKey],
         generator[cbKey],
@@ -459,7 +416,6 @@ dyn_struct! {
     header: BCRYPT_DH_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dh_key_blob
-    payload: #[repr(transparent)] struct DhKeyBlobPrivate([u8]),
     view: struct ref DhKeyBlobPrivateTail {
         modulus[cbKey],
         generator[cbKey],
@@ -473,7 +429,6 @@ dyn_struct! {
     header: BCRYPT_DSA_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
-    payload: #[repr(transparent)] struct DsaKeyBlobPublic([u8]),
     view: struct ref DsaKeyBlobPublicTail {
         modulus[cbKey],
         generator[cbKey],
@@ -486,7 +441,6 @@ dyn_struct! {
     header: BCRYPT_DSA_KEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob
-    payload: #[repr(transparent)] struct DsaKeyBlobPrivate([u8]),
     view: struct ref DsaKeyBlobPrivateTail {
         modulus[cbKey],
         generator[cbKey],
@@ -500,7 +454,6 @@ dyn_struct! {
     header: BCRYPT_DSA_KEY_BLOB_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
-    payload: #[repr(transparent)] struct DsaKeyBlobPublicV2([u8]),
     view: struct ref DsaKeyBlobPublicV2Tail {
         modulus[cbKey],
         generator[cbKey],
@@ -513,7 +466,6 @@ dyn_struct! {
     header: BCRYPT_DSA_KEY_BLOB_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_dsa_key_blob_v2
-    payload: #[repr(transparent)] struct DsaKeyBlobPrivateV2([u8]),
     view: struct ref DsaKeyBlobPrivateV2Tail {
         modulus[cbKey],
         generator[cbKey],
@@ -527,7 +479,6 @@ dyn_struct! {
     header: BCRYPT_ECCKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
-    payload: #[repr(transparent)] struct EccKeyBlobPublic([u8]),
     view: struct ref EccKeyBlobPublicTail {
         x[cbKey],
         y[cbKey],
@@ -539,7 +490,6 @@ dyn_struct! {
     header: BCRYPT_ECCKEY_BLOB,
     /// All the fields are stored as a big-endian multiprecision integer.
     /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
-    payload: #[repr(transparent)] struct EccKeyBlobPrivate([u8]),
     view: struct ref EccKeyBlobPrivateTail {
         x[cbKey],
         y[cbKey],
