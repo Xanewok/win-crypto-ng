@@ -236,10 +236,10 @@ macro_rules! newtype_key_blob {
                         )
                     };
 
-                    // BEWARE: We assume the same layout of slice-based DSTs and
-                    // slices themselves
-                    // SAFETY: The lifetime of both references is the same
-                    unsafe { std::mem::transmute(slice) }
+                    // SAFETY:
+                    // 1. DST "vtable" metadata correctness is checked by the compiler
+                    // 2. The lifetime of both references is the same
+                    unsafe { &*(slice as *const [()] as * const DynStruct<'a, ErasedKeyBlob>) }
                 }
             }
 
@@ -268,8 +268,6 @@ macro_rules! newtype_key_blob {
                         let tail_len = len - header_len;
 
                         // Construct a custom slice-based DST
-                        // BEWARE: We assume the same layout of slice-based DSTs and
-                        // slices themselves
                         let ptr = Box::into_raw(boxed);
                         Ok(unsafe {
                             let slice = std::slice::from_raw_parts_mut(
@@ -277,7 +275,7 @@ macro_rules! newtype_key_blob {
                                 tail_len
                             );
 
-                            Box::from_raw(std::mem::transmute(slice))
+                            Box::from_raw(slice as *mut[()] as *mut DynStruct<'a, Self>)
                         })
                     } else {
                         Err(boxed)

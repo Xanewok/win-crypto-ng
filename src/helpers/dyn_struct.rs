@@ -6,9 +6,17 @@ use winapi::shared::bcrypt::*;
 ///
 /// Can be used to house data with a header structure of a statically known size
 /// but with trailing data of size dependent on the header field values.
-#[repr(C)]
+///
+/// # Layout
+/// The structure is marked as #[repr(packed)] to be layout-compatible with
+/// regular byte slice ([u8]) since it's mostly constructed from Box<[u8]> via
+/// C FFI.
+/// It's worth noting that heap allocation will often align to pointer size, so
+/// no unaligned load should happen once the value is constructed from
+/// heap-allocated bytes.
+#[repr(C, packed)]
 // #[derive(Debug)]
-pub struct DynStruct<'a, T: DynStructParts<'a>>(pub(crate) T::Header, [u8]);
+pub struct DynStruct<'a, T: DynStructParts<'a>>(T::Header, [u8]);
 
 /// Couples both `Header` and `Tail` types used in a `DynStruct`.
 pub trait DynStructParts<'a> {
@@ -191,6 +199,7 @@ macro_rules! dyn_struct {
                 eprintln!("Boxed len is {}", boxed.len());
                 eprintln!("Align of header {} is: {}", stringify!($header), std::mem::align_of::<$header>());
                 
+                dbg!(std::mem::size_of_val(boxed.as_ref()));
                 // TODO: Calculate padding for every field
                 // Every field is padded except for the last one?
                 // assert_eq!(boxed.len() % std::mem::align_of::<$header>(), 0);
