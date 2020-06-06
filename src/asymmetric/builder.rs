@@ -213,11 +213,8 @@ impl BuilderParams for () {}
 impl BuilderParams for BuilderOptions {
     fn set_param(&self, handle: BCRYPT_HANDLE, key_bits: u32) -> Result<()> {
         let (property, blob) = match self {
-            BuilderOptions::Dsa(params) => (BCRYPT_DSA_PARAMETERS, params.as_blob(key_bits)),
-            BuilderOptions::Dh(params) => {
-                todo!()
-                // (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).as_ref().as_bytes())
-            }
+            BuilderOptions::Dsa(params) => (BCRYPT_DSA_PARAMETERS, params.to_blob(key_bits)),
+            BuilderOptions::Dh(params) => (BCRYPT_DH_PARAMETERS, params.to_blob(key_bits).into_bytes()),
         };
 
         set_property(handle, property, &blob)
@@ -236,7 +233,7 @@ impl BuilderParams for DhParams {
 
 impl BuilderParams for DsaParams {
     fn set_param(&self, handle: BCRYPT_HANDLE, key_bits: u32) -> Result<()> {
-        set_property(handle, BCRYPT_DSA_PARAMETERS, self.as_blob(key_bits))
+        set_property(handle, BCRYPT_DSA_PARAMETERS, &self.to_blob(key_bits))
     }
 }
 
@@ -299,12 +296,11 @@ pub struct DsaParamsV1 {
 }
 
 impl DsaParams {
-    fn as_blob(&self, key_bits: u32) -> &[u8] {
-        todo!()
-        // match self {
-        //     DsaParams::V1(params) => params.to_blob(key_bits).as_ref().as_bytes(),
-        //     DsaParams::V2(params) => params.to_blob(key_bits).as_ref().as_bytes(),
-        // }
+    fn to_blob(&self, key_bits: u32) -> Box<[u8]> {
+        match self {
+            DsaParams::V1(params) => params.to_blob(key_bits).into_bytes(),
+            DsaParams::V2(params) => params.to_blob(key_bits).into_bytes(),
+        }
     }
 }
 
@@ -459,7 +455,7 @@ impl KeyPair {
 
     pub fn import<'a>(
         provider: &AsymmetricAlgorithm,
-        key_data: &DynStruct<'a, ErasedKeyBlob>,
+        key_data: &DynStruct<ErasedKeyBlob>,
         no_validate_public: bool,
     ) -> Result<Self> {
         let blob_type = key_data.blob_type().ok_or(Error::InvalidParameter)?;
@@ -484,7 +480,7 @@ impl KeyPair {
         .map(|_| KeyPair(handle))
     }
 
-    pub fn export<'a>(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<'a, ErasedKeyBlob>>> {
+    pub fn export<'a>(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<ErasedKeyBlob>>> {
         let property = WindowsString::from_str(kind.as_value());
 
         let mut bytes: ULONG = 0;
@@ -514,7 +510,7 @@ impl KeyPair {
             ))?;
         }
 
-        Ok(DynStruct::<'a, ErasedKeyBlob>::from_boxed(blob))
+        Ok(DynStruct::<ErasedKeyBlob>::from_boxed(blob))
     }
 }
 

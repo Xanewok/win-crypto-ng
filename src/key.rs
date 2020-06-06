@@ -1,6 +1,7 @@
 //! Cryptographic key handle
 
 use crate::dyn_struct;
+use crate::helpers::dyn_struct::{DynStruct, DynStructParts};
 use crate::helpers::Handle;
 use std::ptr::null_mut;
 use std::convert::TryFrom;
@@ -128,223 +129,120 @@ impl<'a> TryFrom<&'a str> for BlobType {
     }
 }
 
-use crate::helpers::dyn_struct::{DynStruct, DynStructParts};
-
-trait KeyData<'a, T>
-where
-    T: DynStructParts<'a>,
-    T::Header: ExtendsBcryptKeyBlob,
-{
-
-}
-
-// impl<'a, T: DynStructParts<'a>> AsRef<DynStruct<'a, ErasedKeyBlob>> for &DynStruct<'a, T> {
-//     fn as_ref(&self) -> &'a DynStruct<'a, ErasedKeyBlob> {
-//         let slice = *self as *const _ as *const [()];
-//         // let slice = std::slice::from_raw_parts(self as *const [()] len: usize)
-//         unimplemented!()
-//     }
-// }
-
-impl<'a, T> KeyData<'a, T> for DynStruct<'a, T>
-where
-    T: DynStructParts<'a>,
-    T::Header: ExtendsBcryptKeyBlob {}
-
-unsafe trait ExtendsBcryptKeyBlob {
-    fn magic(&self) -> ULONG;
-}
-unsafe impl ExtendsBcryptKeyBlob for BCRYPT_RSAKEY_BLOB {
-    fn magic(&self) -> ULONG {
-        self.Magic
-    }
-}
-
-// impl<'a, T: DynStructParts<'a>> KeyData<'a, T> for RsaPrivate where
-// T::Header: ExtendsBcryptKeyBlob {
-//     // const MAGIC: ULONG = BCRYPT_RSAPRIVATE_MAGIC;
-// }
-
-// #[repr(C)]
-// struct KeyData<'a, K>(K::Header, K::Tail)
-// where
-//     K: KeyBlob<'a>,
-//     <K as DynStructParts<'a>>::Header: ExtendsBcryptKeyBlob;
-
 /// Marker trait for values containing CNG key blob types.
 pub trait KeyBlob: Sized {
     const VALID_MAGIC: &'static [ULONG];
-    const BLOB_TYPE: BlobType;
 
-    // Works around not being able to implement TryFrom in generic ('a) contexts
-    fn from_erased<'a>(
-        boxed: Box<DynStruct<'a, ErasedKeyBlob>>
-    ) -> std::result::Result<
-            Box<DynStruct<'a, Self>>,
-            Box<DynStruct<'a, ErasedKeyBlob>>
-        >
-        where Self: crate::helpers::dyn_struct::DynStructParts<'a>,
-    {
+    fn is_magic_valid(magic: ULONG) -> bool {
         let accepts_all = Self::VALID_MAGIC == &[];
-        if accepts_all || Self::VALID_MAGIC.iter().any(|&x| x == boxed.magic()) {
-            // Adjust the length component
-            let header_len = std::mem::size_of::<<Self as DynStructParts>::Header>();
-            let len = std::mem::size_of_val(boxed.as_ref());
-            let tail_len = len - header_len;
+        accepts_all || Self::VALID_MAGIC.iter().any(|&x| x == magic)
+    }
+}
 
-            // Construct a custom slice-based DST
-            let ptr = Box::into_raw(boxed);
-            Ok(unsafe {
-                let slice = std::slice::from_raw_parts_mut(
-                    ptr as *mut (),
-                    tail_len
-                );
+impl<T> AsRef<DynStruct<ErasedKeyBlob>> for DynStruct<T> where T: DynStructParts + KeyBlob {
+    fn as_ref(&self) -> &DynStruct<ErasedKeyBlob> {
+        self.as_erased()
+    }
+}
 
-                Box::from_raw(slice as *mut[()] as *mut DynStruct<'a, Self>)
-            })
-        } else {
-            Err(boxed)
+impl<T> DynStruct<T> where T: DynStructParts + KeyBlob {
+    pub fn magic(&self) -> ULONG {
+        self.as_erased().header().Magic
+    }
+
+    pub fn blob_type(&self) -> Option<BlobType> {
+        magic_to_blob_type(self.magic())
+    }
+
+    pub fn as_erased(&self) -> &DynStruct<ErasedKeyBlob> {
+        let header_len = std::mem::size_of::<<ErasedKeyBlob as DynStructParts>::Header>();
+        let tail_len = std::mem::size_of_val(self) - header_len;
+
+        let slice = unsafe {
+            std::slice::from_raw_parts(
+                self as *const _ as *const (),
+                tail_len
+            )
+        };
+        // Construct a custom slice-based DST
+        // SAFETY:
+        // 1. Compiler enforces compatibility of DST pointer metadata
+        //    (so our DST wide pointer has the same layout as slice pointer)
+        // 2. The lifetime of both references is the same
+        unsafe { &*(slice as *const [()] as * const DynStruct<ErasedKeyBlob>) }
+    }
+
+    // NOTE: TryInto can't be implemented due to blanket generic TryFrom impl,
+    // i.e. U = T provides a blanket Into<T> for T impl.
+    pub fn try_into<U>(self: Box<Self>) -> Result<Box<DynStruct<U>>, Box<Self>>
+    where
+        U: DynStructParts + KeyBlob
+    {
+        if !U::is_magic_valid(self.magic()) {
+            return Err(self);
+        }
+
+        // Adjust the length component
+        let header_len = std::mem::size_of::<U::Header>();
+        let tail_len = std::mem::size_of_val(self.as_ref()) - header_len;
+
+        // Construct a custom slice-based DST
+        let ptr = Box::into_raw(self);
+        // SAFETY:
+        // 1. Compiler enforces compatibility of DST pointer metadata
+        //    (so our DST wide pointer has the same layout as slice pointer)
+        // 2. The lifetime of both references is the same
+        unsafe {
+            let slice = std::slice::from_raw_parts_mut(ptr as *mut (), tail_len);
+            Ok(Box::from_raw(slice as *mut [()] as *mut DynStruct<U>))
         }
     }
 }
 
-// impl<T: KeyBlob> From<TypedBlob<T>> for TypedBlob<BCRYPT_KEY_BLOB> {
-//     fn from(typed: TypedBlob<T>) -> Self {
-//         // SAFETY: Every specialized key blob struct extends the
-//         // basic "type-erased" BCRYPT_KEY_BLOB, so it's safe to
-//         // just discard the concrete type
-//         unsafe { TypedBlob::from_box(typed.into_inner()) }
-//     }
-// }
+macro_rules! key_blobs {
+    ($($name: ident, $blob: expr, magic: $([$($val: ident),*])?),*) => {
+        fn magic_to_blob_type(magic: ULONG) -> Option<BlobType> {
+            match magic {
+                $(
+                    $($(| $val)* => Some($blob),)?
+                )*
+                _ => None
+            }
+        }
 
-macro_rules! newtype_key_blob {
-    // ($($name: ident, $type: expr, $tt, $value: ty),*) => {
-    ($($name: ident, $blob: expr, [$($val: expr),*]),*) => {
         $(
-            impl<'a> AsRef<DynStruct<'a, ErasedKeyBlob>> for DynStruct<'a, $name> {
-                fn as_ref(&self) -> &DynStruct<'a, ErasedKeyBlob> {
-                    // Adjust the length component
-                    let header_len = std::mem::size_of::<<ErasedKeyBlob as DynStructParts>::Header>();
-                    let tail_len = std::mem::size_of_val(self) - header_len;
-
-                    let slice: &'a _ = unsafe {
-                        std::slice::from_raw_parts(
-                            self as *const _ as *const (),
-                            tail_len
-                        )
-                    };
-                    // Construct a custom slice-based DST
-                    // SAFETY:
-                    // 1. Compiler enforces compatibility of DST pointer metadata
-                    //    (so our DST wide pointer has the same layout as slice pointer)
-                    // 2. The lifetime of both references is the same
-                    unsafe { &*(slice as *const [()] as * const DynStruct<'a, ErasedKeyBlob>) }
-                }
-            }
-
             impl KeyBlob for $name {
-                const VALID_MAGIC: &'static [ULONG] = &[$($val),*];
-                const BLOB_TYPE: BlobType = $blob;
+                const VALID_MAGIC: &'static [ULONG] = &[$($($val),*)?];
             }
 
-            // // FFS Generic impl says fuck you
-            // impl Into<Box<DynStruct<'_, ErasedKeyBlob>>> for Box<DynStruct<'_, $name>> {
-            //     fn into<'a>(self) -> Box<DynStruct<'a, ErasedKeyBlob>> {
-            //         let len = std::mem::size_of_val(&self);
-            //         // Convert to Box<[u8]>
-            //         // TODO: Abstract this
-            //         let ptr = Box::into_raw(self);
-            //         let boxed = unsafe {
-            //             let slice = std::slice::from_raw_parts_mut(ptr as *mut u8, len);
-
-            //             Box::from_raw(slice)
-            //         };
-
-            //         DynStruct::<'a, ErasedKeyBlob>::from_boxed(boxed)
-            //     }
-            // }
-
-            // impl<'a> TryFrom<Box<DynStruct<'a, ErasedKeyBlob>>> for Box<DynStruct<'a, ErasedKeyBlob>> {
-                
-            // }
-            // impl TryFrom<TypedBlob<BCRYPT_KEY_BLOB>> for TypedBlob<$name> {
-            //     type Error = TypedBlob<BCRYPT_KEY_BLOB>;
-            //     fn try_from(value: TypedBlob<BCRYPT_KEY_BLOB>) -> Result<Self, Self::Error> {
-            //         if value.Magic == <$name as KeyBlob>::MAGIC {
-            //             // SAFETY: Every specialized key blob struct extends the
-            //             // basic "type-erased" BCRYPT_KEY_BLOB - the magic value
-            //             // is a discriminant. We trust the documentation on how
-            //             // can we reinterpret the blob layout according to its
-            //             // magic.
-            //             Ok(unsafe { TypedBlob::from_box(value.into_inner()) })
-            //         } else {
-            //             Err(value)
-            //         }
-            //     }
-            // }
         )*
-
-        // impl TypedBlob<BCRYPT_KEY_BLOB> {
-        //     pub fn to_type(&self) -> Option<BlobType> {
-        //         match self.Magic {
-        //             $($magic => {TryFrom::try_from($type).ok()})*
-        //             _ => None,
-        //         }
-        //     }
-        // }
     };
 }
 
-newtype_key_blob! {
-    ErasedKeyBlob, BlobType::RsaPublic, [],
-    DhKeyPublicBlob, BlobType::DhPublic, [BCRYPT_DH_PUBLIC_MAGIC],
-    DhKeyPrivateBlob, BlobType::DhPrivate, [BCRYPT_DH_PRIVATE_MAGIC],
-    DsaKeyPublicBlob, BlobType::DsaPublic, [BCRYPT_DSA_PUBLIC_MAGIC],
-    DsaKeyPrivateBlob, BlobType::DsaPrivate, [BCRYPT_DSA_PRIVATE_MAGIC],
-    DsaKeyPublicV2Blob, BlobType::DsaPublic, [BCRYPT_DSA_PUBLIC_MAGIC_V2],
-    DsaKeyPrivateV2Blob, BlobType::DsaPrivate, [BCRYPT_DSA_PRIVATE_MAGIC_V2],
-    EccKeyPublicBlob, BlobType::EccPublic, [
+key_blobs! {
+    ErasedKeyBlob, BlobType::PublicKey, magic:,
+    DhKeyPublicBlob, BlobType::DhPublic, magic: [BCRYPT_DH_PUBLIC_MAGIC],
+    DhKeyPrivateBlob, BlobType::DhPrivate, magic: [BCRYPT_DH_PRIVATE_MAGIC],
+    DsaKeyPublicBlob, BlobType::DsaPublic, magic: [BCRYPT_DSA_PUBLIC_MAGIC],
+    DsaKeyPrivateBlob, BlobType::DsaPrivate, magic: [BCRYPT_DSA_PRIVATE_MAGIC],
+    DsaKeyPublicV2Blob, BlobType::DsaPublic, magic: [BCRYPT_DSA_PUBLIC_MAGIC_V2],
+    DsaKeyPrivateV2Blob, BlobType::DsaPrivate, magic: [BCRYPT_DSA_PRIVATE_MAGIC_V2],
+    EccKeyPublicBlob, BlobType::EccPublic, magic: [
         BCRYPT_ECDH_PUBLIC_GENERIC_MAGIC, BCRYPT_ECDH_PUBLIC_P256_MAGIC,
         BCRYPT_ECDH_PUBLIC_P384_MAGIC, BCRYPT_ECDH_PUBLIC_P521_MAGIC,
         BCRYPT_ECDSA_PUBLIC_GENERIC_MAGIC, BCRYPT_ECDSA_PUBLIC_P256_MAGIC,
         BCRYPT_ECDSA_PUBLIC_P384_MAGIC, BCRYPT_ECDSA_PUBLIC_P521_MAGIC
     ],
-    EccKeyPrivateBlob, BlobType::EccPrivate, [
+    EccKeyPrivateBlob, BlobType::EccPrivate, magic: [
         BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC, BCRYPT_ECDH_PRIVATE_P256_MAGIC,
         BCRYPT_ECDH_PRIVATE_P384_MAGIC, BCRYPT_ECDH_PRIVATE_P521_MAGIC,
         BCRYPT_ECDSA_PRIVATE_GENERIC_MAGIC, BCRYPT_ECDSA_PRIVATE_P256_MAGIC,
         BCRYPT_ECDSA_PRIVATE_P384_MAGIC, BCRYPT_ECDSA_PRIVATE_P521_MAGIC
     ],
-    RsaKeyPublicBlob, BlobType::RsaPublic, [BCRYPT_RSAPUBLIC_MAGIC],
-    RsaKeyPrivateBlob, BlobType::RsaPrivate, [BCRYPT_RSAPRIVATE_MAGIC],
-    RsaKeyFullPrivateBlob, BlobType::RsaFullPrivate, [BCRYPT_RSAFULLPRIVATE_MAGIC]
+    RsaKeyPublicBlob, BlobType::RsaPublic, magic: [BCRYPT_RSAPUBLIC_MAGIC],
+    RsaKeyPrivateBlob, BlobType::RsaPrivate, magic: [BCRYPT_RSAPRIVATE_MAGIC],
+    RsaKeyFullPrivateBlob, BlobType::RsaFullPrivate, magic: [BCRYPT_RSAFULLPRIVATE_MAGIC]
 }
-
-// newtype_key_blob!(
-//     DhPrivate, BCRYPT_DH_PRIVATE_MAGIC, BCRYPT_DH_KEY_BLOB,
-//     DhPublic, BCRYPT_DH_PUBLIC_MAGIC, BCRYPT_DH_KEY_BLOB,
-//     DsaPublic, BCRYPT_DSA_PUBLIC_MAGIC, BCRYPT_DSA_KEY_BLOB,
-//     DsaPrivate, BCRYPT_DSA_PRIVATE_MAGIC, BCRYPT_DSA_KEY_BLOB,
-//     DsaPublicV2, BCRYPT_DSA_PUBLIC_MAGIC_V2, BCRYPT_DSA_KEY_BLOB_V2,
-//     DsaPrivateV2, BCRYPT_DSA_PRIVATE_MAGIC_V2, BCRYPT_DSA_KEY_BLOB_V2,
-//     RsaFullPrivate, BCRYPT_RSAFULLPRIVATE_MAGIC, BCRYPT_RSAKEY_BLOB,
-//     RsaPrivate, BCRYPT_RSAPRIVATE_MAGIC, BCRYPT_RSAKEY_BLOB,
-//     RsaPublic, BCRYPT_RSAPUBLIC_MAGIC, BCRYPT_RSAKEY_BLOB,
-//     EcdhPublic, BCRYPT_ECDH_PUBLIC_GENERIC_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhPrivate, BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP256Public, BCRYPT_ECDH_PUBLIC_P256_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP256Private, BCRYPT_ECDH_PRIVATE_P256_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP384Public, BCRYPT_ECDH_PUBLIC_P384_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP384Private, BCRYPT_ECDH_PRIVATE_P384_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP521Public, BCRYPT_ECDH_PUBLIC_P521_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdhP521Private, BCRYPT_ECDH_PRIVATE_P521_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP256Public, BCRYPT_ECDSA_PUBLIC_P256_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP256Private, BCRYPT_ECDSA_PRIVATE_P256_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP384Public, BCRYPT_ECDSA_PUBLIC_P384_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP384Private, BCRYPT_ECDSA_PRIVATE_P384_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP521Public, BCRYPT_ECDSA_PUBLIC_P521_MAGIC, BCRYPT_ECCKEY_BLOB,
-//     EcdsaP521Private, BCRYPT_ECDSA_PRIVATE_P521_MAGIC, BCRYPT_ECCKEY_BLOB
-// );
 
 dyn_struct! {
     enum ErasedKeyBlob {},
@@ -494,44 +392,5 @@ dyn_struct! {
         x[cbKey],
         y[cbKey],
         d[cbKey],
-    }
-}
-
-impl DynStruct<'_, ErasedKeyBlob> {
-    // NOTE: This is required as trait solving can hit some limitations when
-    // trying to solve `<ErasedKeyBlob as
-    // helpers::dyn_struct::DynStructParts<'a>>::Header` as `BCRYPT_KEY_BLOB`,
-    // so just provide the explicit method
-    pub fn magic(&self) -> ULONG {
-        self.header().Magic
-    }
-
-    pub fn blob_type(&self) -> Option<BlobType> {
-        Some(match self.header().Magic {
-            BCRYPT_DH_PRIVATE_MAGIC => BlobType::DhPrivate,
-            BCRYPT_DH_PUBLIC_MAGIC => BlobType::DhPublic,
-            BCRYPT_DSA_PUBLIC_MAGIC |
-            BCRYPT_DSA_PUBLIC_MAGIC_V2 => BlobType::DsaPublic,
-            BCRYPT_DSA_PRIVATE_MAGIC |
-            BCRYPT_DSA_PRIVATE_MAGIC_V2 => BlobType::DsaPrivate,
-            BCRYPT_RSAFULLPRIVATE_MAGIC => BlobType::RsaFullPrivate,
-            BCRYPT_RSAPRIVATE_MAGIC => BlobType::RsaPrivate,
-            BCRYPT_RSAPUBLIC_MAGIC => BlobType::RsaPublic,
-            BCRYPT_ECDH_PUBLIC_P256_MAGIC |
-            BCRYPT_ECDH_PUBLIC_P384_MAGIC |
-            BCRYPT_ECDH_PUBLIC_P521_MAGIC |
-            BCRYPT_ECDSA_PUBLIC_P256_MAGIC |
-            BCRYPT_ECDSA_PUBLIC_P384_MAGIC |
-            BCRYPT_ECDSA_PUBLIC_P521_MAGIC |
-            BCRYPT_ECDH_PUBLIC_GENERIC_MAGIC => BlobType::EccPublic,
-            BCRYPT_ECDH_PRIVATE_P256_MAGIC |
-            BCRYPT_ECDH_PRIVATE_P384_MAGIC |
-            BCRYPT_ECDH_PRIVATE_P521_MAGIC |
-            BCRYPT_ECDSA_PRIVATE_P256_MAGIC |
-            BCRYPT_ECDSA_PRIVATE_P384_MAGIC |
-            BCRYPT_ECDSA_PRIVATE_P521_MAGIC |
-            BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC => BlobType::EccPrivate,
-            _ => return None
-        })
     }
 }

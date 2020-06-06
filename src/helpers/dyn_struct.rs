@@ -16,17 +16,14 @@ use winapi::shared::bcrypt::*;
 /// no unaligned load should happen once the value is constructed from
 /// heap-allocated bytes.
 #[repr(C, packed)]
-// #[derive(Debug)]
-pub struct DynStruct<'a, T: DynStructParts<'a>>(T::Header, [u8]);
+pub struct DynStruct<T: DynStructParts>(T::Header, [u8]);
 
 /// Couples both `Header` and `Tail` types used in a `DynStruct`.
-pub trait DynStructParts<'a> {
+pub trait DynStructParts {
     type Header;
-    type Tail;
-    fn view(header: &'a Self::Header, tail: &'a [u8]) -> Self::Tail;
 }
 
-impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
+impl<'a, T: DynStructParts> DynStruct<T> {
     pub fn header(&self) -> &T::Header {
         // SAFETY: The only way to construct this value is via
         // `Self::from_boxed`, which requires that the reference is at least
@@ -40,22 +37,12 @@ impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
         &self.1
     }
 
-    pub fn view(&'a self) -> T::Tail {
-        T::view(self.header(), self.tail())
-    }
-
-    pub fn as_parts(&'a self) -> (&'a T::Header, T::Tail) {
-        let header = self.header();
-        let view = self.view();
-        (header, view)
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         AsBytes::as_bytes(self)
     }
 }
 
-impl<'a, T: DynStructParts<'a>> AsBytes<'a> for DynStruct<'a, T> {
+impl<'a, T: DynStructParts> AsBytes<'a> for DynStruct<T> {
     fn as_bytes(&self) -> &[u8] {
         let len = std::mem::size_of_val(self);
         // SAFETY: DynStruct is C-compatible - header is assumed to be a
@@ -67,8 +54,8 @@ impl<'a, T: DynStructParts<'a>> AsBytes<'a> for DynStruct<'a, T> {
     }
 }
 
-impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
-    fn into_bytes(self: Box<Self>) -> Box<[u8]> {
+impl<'a, T: DynStructParts> DynStruct<T> {
+    pub fn into_bytes(self: Box<Self>) -> Box<[u8]> {
         let len = std::mem::size_of_val(self.as_ref());
         let ptr = Box::into_raw(self);
         // SAFETY: DynStruct is C-compatible - header is `#[repr(C)]` and the
@@ -81,7 +68,7 @@ impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
     }
 }
 
-impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
+impl<'a, T: DynStructParts> DynStruct<T> {
     pub fn from_boxed(boxed: Box<[u8]>) -> Box<Self> where T::Header: 'static {
         dbg!(&boxed);
         let hehe: &BCRYPT_ECCKEY_BLOB = unsafe { std::mem::transmute(boxed.as_ref().as_ptr())};
@@ -90,11 +77,9 @@ impl<'a, T: DynStructParts<'a>> DynStruct<'a, T> {
         eprintln!("Boxed len is {}", boxed.len());
         eprintln!("Align of header {:?} is: {}", std::any::TypeId::of::<T::Header>(), std::mem::align_of::<T::Header>());
 
+        // TODO:
         dbg!(std::mem::size_of_val(boxed.as_ref()));
-        // TODO: Calculate padding for every field
-        // Every field is padded except for the last one?
         // assert_eq!(boxed.len() % std::mem::align_of::<$header>(), 0);
-        // let bytes_len = boxed.len();
 
         // SAFETY: Require that the pointer is at least as aligned as the header
         // to safely reference its first field (header) with aligned load.
@@ -143,25 +128,11 @@ macro_rules! dyn_struct {
             )*
         }
 
-        impl<'a> $crate::helpers::dyn_struct::DynStructParts<'a> for $wrapper_ident {
+        impl<'a> $crate::helpers::dyn_struct::DynStructParts for $wrapper_ident {
             type Header = $header;
-            type Tail = $tail_ident<'a>;
-
-            fn view(_header: &'a Self::Header, tail: &'a [u8]) -> $tail_ident<'a> {
-                let mut _offset = 0;
-                $(
-                    let field_len = dyn_struct! { size: _header, $($len)*};
-                    let $field: &'a [u8] = &tail[_offset.._offset + field_len];
-                    _offset += field_len;
-                )*
-
-                $tail_ident {
-                    $($field,)*
-                }
-            }
         }
 
-        impl $crate::helpers::dyn_struct::DynStruct<'_, $wrapper_ident> {
+        impl $crate::helpers::dyn_struct::DynStruct<$wrapper_ident> {
             #[allow(unused_assignments)]
             pub fn clone_from_parts(header: &$header, tail: &$tail_ident) -> Box<Self> {
                 let header_len = std::mem::size_of_val(header);
@@ -201,7 +172,7 @@ macro_rules! dyn_struct {
             }
         }
 
-        impl $crate::helpers::dyn_struct::DynStruct<'_, $wrapper_ident> {
+        impl $crate::helpers::dyn_struct::DynStruct<$wrapper_ident> {
             dyn_struct! { fields: ;
                 $(
                     $(#[$meta])*
@@ -251,32 +222,6 @@ macro_rules! dyn_struct {
     (size: $this: expr, $ident: ident) => { $this.$ident as usize };
     (size: $this: expr, $expr: expr) => { $expr };
 
-}
-
-dyn_struct! {
-    enum RsaPublic {},
-    header: BCRYPT_RSAKEY_BLOB,
-    /// All the fields are stored as a big-endian multiprecision integer.
-    /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    #[derive(Debug)]
-    view: struct ref RsaPublicTail {
-        pub_exp[cbPublicExp],
-        modulus[cbModulus],
-    }
-}
-
-dyn_struct! {
-    enum RsaPrivate {},
-    header: BCRYPT_RSAKEY_BLOB,
-    /// All the fields are stored as a big-endian multiprecision integer.
-    /// See https://docs.microsoft.com/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob.
-    #[derive(Debug)]
-    view: struct ref RsaPrivateTail {
-        pub_exp[cbPublicExp],
-        modulus[cbModulus],
-        prime1[cbPrime1],
-        prime2[cbPrime2],
-    }
 }
 
 #[cfg(test)]
