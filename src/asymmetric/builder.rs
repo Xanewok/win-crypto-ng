@@ -1,8 +1,9 @@
 //! Type-safe builders to generate various asymmetric keys.
 
 use crate::key::ErasedKeyBlob;
-use crate::helpers::{Blob, Handle, WideCString};
+use crate::helpers::{Blob, WideCString};
 use crate::key::{BlobType, KeyHandle};
+use crate::handle::{Handle};
 use crate::{Error, Result};
 use std::marker::PhantomData;
 use std::ptr::null_mut;
