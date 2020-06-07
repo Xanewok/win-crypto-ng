@@ -39,6 +39,9 @@ impl Curve for Curve25519 {
     fn key_bits(&self) -> u32 { 255 }
 }
 
+ // Required due to 1.37 being MSRV
+ // TODO: Replace with #[non_exhaustive] once we bump MSRV to 1.40
+#[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum NamedCurve {
     NistP256,
@@ -47,7 +50,6 @@ pub enum NamedCurve {
     Curve25519,
     // TODO: Implement more
 
-    // FIXME: Replace with #[non_exhaustive] once we bump MSRV to 1.40
     #[doc(hidden)]
     __Nonexhaustive
 }
