@@ -10,7 +10,7 @@ fn _check_ref_safe<T>(ptr: *const T) -> Result<(), ()> {
 
 }
 
-pub trait AsBytes<'a> {
+pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];
 }
 

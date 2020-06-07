@@ -42,7 +42,8 @@ impl<'a, T: DynStructParts> DynStruct<T> {
     }
 }
 
-impl<'a, T: DynStructParts> AsBytes<'a> for DynStruct<T> {
+impl<T: DynStructParts> AsBytes for DynStruct<T> {
+    // TODO: Add T::Header: AsBytes
     fn as_bytes(&self) -> &[u8] {
         let len = std::mem::size_of_val(self);
         // SAFETY: DynStruct is C-compatible - header is assumed to be a

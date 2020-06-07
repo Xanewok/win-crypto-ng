@@ -453,7 +453,7 @@ impl KeyPair {
         })
     }
 
-    pub fn import<'a>(
+    pub fn import(
         provider: &AsymmetricAlgorithm,
         key_data: &DynStruct<ErasedKeyBlob>,
         no_validate_public: bool,
@@ -480,7 +480,7 @@ impl KeyPair {
         .map(|_| KeyPair(handle))
     }
 
-    pub fn export<'a>(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<ErasedKeyBlob>>> {
+    pub fn export(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<ErasedKeyBlob>>> {
         let property = WindowsString::from_str(kind.as_value());
 
         let mut bytes: ULONG = 0;
