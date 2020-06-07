@@ -39,7 +39,6 @@ impl Curve for Curve25519 {
     fn key_bits(&self) -> u32 { 255 }
 }
 
-#[non_exhaustive]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum NamedCurve {
     NistP256,
@@ -47,6 +46,10 @@ pub enum NamedCurve {
     NistP521,
     Curve25519,
     // TODO: Implement more
+
+    // FIXME: Replace with #[non_exhaustive] once we bump MSRV to 1.40
+    #[doc(hidden)]
+    __Nonexhaustive
 }
 
 impl NamedCurve {
@@ -56,6 +59,7 @@ impl NamedCurve {
             Self::NistP384 => BCRYPT_ECC_CURVE_NISTP384,
             Self::NistP521 => BCRYPT_ECC_CURVE_NISTP521,
             Self::Curve25519 => BCRYPT_ECC_CURVE_25519,
+            Self::__Nonexhaustive => unreachable!()
         }
     }
 
@@ -65,6 +69,7 @@ impl NamedCurve {
             Self::NistP384 => NistP384.key_bits(),
             Self::NistP521 => NistP521.key_bits(),
             Self::Curve25519 => Curve25519.key_bits(),
+            Self::__Nonexhaustive => unreachable!()
         }
     }
 }
