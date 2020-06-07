@@ -9,8 +9,8 @@
 
 use crate::helpers::blob::{Blob, BlobLayout};
 use crate::helpers::{WideCString};
-use crate::handle::{AlgoHandle};
-use crate::key::{BlobType, ErasedKeyBlob, KeyHandle};
+use crate::handle::{AlgoHandle, KeyHandle};
+use crate::key::{BlobType, ErasedKeyBlob};
 use crate::property::{Access, AlgorithmName, EccCurveName};
 use crate::Result;
 use std::convert::TryFrom;

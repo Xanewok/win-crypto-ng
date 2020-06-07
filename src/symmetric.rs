@@ -44,8 +44,7 @@
 
 use crate::buffer::Buffer;
 use crate::helpers::{WideCString};
-use crate::handle::{AlgoHandle, Handle};
-use crate::key::KeyHandle;
+use crate::handle::{AlgoHandle, Handle, KeyHandle};
 use crate::property::{self, Access, BlockLength, KeyLength, KeyLengths, ObjectLength};
 use crate::{Error, Result};
 use std::mem::MaybeUninit;

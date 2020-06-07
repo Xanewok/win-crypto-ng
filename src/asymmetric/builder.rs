@@ -2,8 +2,8 @@
 
 use crate::key::ErasedKeyBlob;
 use crate::helpers::{Blob, WideCString};
-use crate::key::{BlobType, KeyHandle};
-use crate::handle::{Handle};
+use crate::key::{BlobType};
+use crate::handle::{Handle, KeyHandle};
 use crate::{Error, Result};
 use std::marker::PhantomData;
 use std::ptr::null_mut;
