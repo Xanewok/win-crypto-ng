@@ -1,7 +1,7 @@
 //! Type-safe builders to generate various asymmetric keys.
 
 use crate::key::ErasedKeyBlob;
-use crate::helpers::{DynStruct, Handle, WindowsString};
+use crate::helpers::{Blob, Handle, WindowsString};
 use crate::key::{BlobType, KeyHandle};
 use crate::{Error, Result};
 use std::marker::PhantomData;
@@ -330,12 +330,12 @@ pub struct DsaParamsV2 {
 }
 
 impl DsaParamsV1 {
-    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DsaParameter>> {
+    fn to_blob(&self, key_bits: u32) -> Box<Blob<DsaParameter>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DSA_PARAMETER_HEADER>();
         let length = header_len + key_bytes + key_bytes;
 
-        DynStruct::<DsaParameter>::clone_from_parts(
+        Blob::<DsaParameter>::clone_from_parts(
             &BCRYPT_DSA_PARAMETER_HEADER {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DSA_PARAMETERS_MAGIC,
@@ -353,12 +353,12 @@ impl DsaParamsV1 {
 }
 
 impl DsaParamsV2 {
-    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DsaParameterV2>> {
+    fn to_blob(&self, key_bits: u32) -> Box<Blob<DsaParameterV2>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DSA_PARAMETER_HEADER_V2>();
         let length = header_len + key_bytes + key_bytes;
 
-        DynStruct::<DsaParameterV2>::clone_from_parts(
+        Blob::<DsaParameterV2>::clone_from_parts(
             &BCRYPT_DSA_PARAMETER_HEADER_V2 {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DSA_PARAMETERS_MAGIC_V2,
@@ -379,12 +379,12 @@ impl DsaParamsV2 {
 }
 
 impl DhParams {
-    fn to_blob(&self, key_bits: u32) -> Box<DynStruct<DhParameter>> {
+    fn to_blob(&self, key_bits: u32) -> Box<Blob<DhParameter>> {
         let key_bytes = key_bits as usize / 8;
         let header_len = std::mem::size_of::<BCRYPT_DH_PARAMETER_HEADER>();
         let length = header_len + key_bytes + key_bytes;
 
-        DynStruct::<DhParameter>::clone_from_parts(
+        Blob::<DhParameter>::clone_from_parts(
             &BCRYPT_DH_PARAMETER_HEADER {
                 cbLength: length as u32,
                 dwMagic: BCRYPT_DH_PARAMETERS_MAGIC,
@@ -455,7 +455,7 @@ impl KeyPair {
 
     pub fn import(
         provider: &AsymmetricAlgorithm,
-        key_data: &DynStruct<ErasedKeyBlob>,
+        key_data: &Blob<ErasedKeyBlob>,
         no_validate_public: bool,
     ) -> Result<Self> {
         let blob_type = key_data.blob_type().ok_or(Error::InvalidParameter)?;
@@ -480,7 +480,7 @@ impl KeyPair {
         .map(|_| KeyPair(handle))
     }
 
-    pub fn export(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<DynStruct<ErasedKeyBlob>>> {
+    pub fn export(handle: BCRYPT_KEY_HANDLE, kind: BlobType) -> Result<Box<Blob<ErasedKeyBlob>>> {
         let property = WindowsString::from_str(kind.as_value());
 
         let mut bytes: ULONG = 0;
@@ -510,7 +510,7 @@ impl KeyPair {
             ))?;
         }
 
-        Ok(DynStruct::<ErasedKeyBlob>::from_boxed(blob))
+        Ok(Blob::<ErasedKeyBlob>::from_boxed(blob))
     }
 }
 
@@ -524,9 +524,9 @@ impl KeyPairBuilder<'_> {
     }
 }
 
-use crate::dyn_struct;
+use crate::blob;
 
-dyn_struct! {
+blob! {
     enum DsaParameter {},
     header: BCRYPT_DSA_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
@@ -537,7 +537,7 @@ dyn_struct! {
     }
 }
 
-dyn_struct! {
+blob! {
     enum DsaParameterV2 {},
     header: BCRYPT_DSA_PARAMETER_HEADER_V2,
     /// All the fields are stored as a big-endian multiprecision integer.
@@ -548,7 +548,7 @@ dyn_struct! {
     }
 }
 
-dyn_struct! {
+blob! {
     enum DhParameter {},
     header: BCRYPT_DH_PARAMETER_HEADER,
     /// All the fields are stored as a big-endian multiprecision integer.
