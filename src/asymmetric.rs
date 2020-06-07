@@ -10,7 +10,7 @@
 use crate::helpers::blob::BlobLayout;
 use crate::helpers::blob::Blob;
 use crate::key::{ErasedKeyBlob};
-use crate::helpers::{AlgoHandle, Handle, WindowsString};
+use crate::helpers::{AlgoHandle, Handle, WideCString};
 use crate::key::{BlobType, KeyHandle};
 use crate::property::{AlgorithmName, EccCurveName};
 use crate::Result;
@@ -145,7 +145,7 @@ impl AsymmetricAlgorithm {
             | AsymmetricAlgorithmId::Ecdsa(NamedCurve::NistP521) => {}
             | AsymmetricAlgorithmId::Ecdh(curve)
             | AsymmetricAlgorithmId::Ecdsa(curve) => {
-                let property = WindowsString::from_str(curve.as_str());
+                let property = WideCString::from_str(curve.as_str());
 
                 handle.set_property::<EccCurveName>(property.as_slice_with_nul())?;
             }
@@ -164,7 +164,7 @@ impl AsymmetricAlgorithm {
     /// ```
     pub fn id(&self) -> Result<AsymmetricAlgorithmId> {
         let name = self.handle.get_property_unsized::<AlgorithmName>()
-            .map(|name| WindowsString::from_bytes_with_nul(name).to_string())?;
+            .map(|name| WideCString::from_bytes_with_nul(name).to_string())?;
 
         AsymmetricAlgorithmId::try_from(name.as_str()).map_err(|_| crate::Error::InvalidHandle)
     }
