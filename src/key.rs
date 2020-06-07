@@ -2,7 +2,7 @@
 
 use crate::blob;
 use crate::helpers::blob::{Blob, BlobLayout};
-use crate::helpers::Handle;
+use crate::handle::Handle;
 use std::ptr::null_mut;
 use std::convert::TryFrom;
 use winapi::shared::bcrypt::*;
