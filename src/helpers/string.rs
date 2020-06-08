@@ -14,6 +14,10 @@ pub struct WideCString {
 }
 
 impl WideCString {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn from_bytes_with_nul(val: Box<[u16]>) -> Self {
         if let Some(last) = val.iter().last() {
             assert_eq!(last, &0u16);
@@ -28,6 +32,14 @@ impl WideCString {
 
     pub fn as_ptr(&self) -> LPCWSTR {
         self.inner.as_ptr()
+    }
+}
+
+impl Default for WideCString {
+    fn default() -> Self {
+        WideCString {
+            inner: Vec::new(),
+        }
     }
 }
 
