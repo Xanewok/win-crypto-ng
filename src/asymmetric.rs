@@ -325,6 +325,28 @@ import_blobs!(
     (Rsa, Private, &'a Blob<RsaKeyPrivateBlob>),
 );
 
+// TODO: Come up with an ergonomic high-level API for key importing from parts
+impl AsymmetricKey<Rsa, Private> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &RsaKeyBlobPrivateTail) -> Result<Self> {
+        let key_bits = parts.modulus.len() * 8;
+        if key_bits % 64 != 0 || key_bits < 512 || key_bits > 16384 {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let header = BCRYPT_RSAKEY_BLOB {
+            BitLength: key_bits as u32,
+            Magic: BCRYPT_RSAPRIVATE_MAGIC,
+            cbModulus: parts.modulus.len() as u32,
+            cbPublicExp: parts.pub_exp.len() as u32,
+            cbPrime1: parts.prime1.len() as u32,
+            cbPrime2: parts.prime2.len() as u32,
+        };
+        let blob = Blob::<RsaKeyPrivateBlob>::clone_from_parts(&header, parts);
+
+        <Self as Import::<Rsa, Private>>::import(Rsa, provider, &blob)
+    }
+}
+
 /// Attempts to export the key to a given blob type.
 ///
 /// # Example
@@ -446,6 +468,13 @@ mod tests {
         assert_eq!(blob.modulus(), imported_blob.modulus());
         assert_eq!(blob.pub_exp(), imported_blob.pub_exp());
         assert_eq!(blob.prime1(), imported_blob.prime1());
+
+        AsymmetricKey::<Rsa, Private>::import_from_parts(&provider, &RsaKeyBlobPrivateTail {
+            pub_exp: blob.pub_exp(),
+            modulus: blob.modulus(),
+            prime1: blob.prime1(),
+            prime2: blob.prime2(),
+        })?;
 
         let key = AsymmetricKey::builder(Ecdsa(NistP521)).build()?;
         let blob = key.export().unwrap();
