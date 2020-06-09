@@ -12,7 +12,7 @@ use crate::{Error, Result};
 use std::ptr::null_mut;
 use winapi::shared::bcrypt::*;
 
-trait Signer {
+pub trait Signer {
     fn sign(
         &self,
         input: &[u8],
