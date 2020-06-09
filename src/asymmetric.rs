@@ -339,7 +339,28 @@ impl AsymmetricKey<Rsa, Private> {
         };
         let blob = Blob::<RsaKeyPrivateBlob>::clone_from_parts(&header, parts);
 
-        <Self as Import::<Rsa, Private>>::import(Rsa, provider, &blob)
+        <Self as Import::<_, _>>::import(Rsa, provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Rsa, Public> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &RsaKeyPublicViewTail) -> Result<Self> {
+        let key_bits = parts.modulus.len() * 8;
+        if key_bits % 64 != 0 || key_bits < 512 || key_bits > 16384 {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let header = BCRYPT_RSAKEY_BLOB {
+            BitLength: key_bits as u32,
+            Magic: BCRYPT_RSAPUBLIC_MAGIC,
+            cbModulus: parts.modulus.len() as u32,
+            cbPublicExp: parts.pub_exp.len() as u32,
+            cbPrime1: 0,
+            cbPrime2: 0,
+        };
+        let blob = Blob::<RsaKeyPublicBlob>::clone_from_parts(&header, parts);
+
+        <Self as Import::<_, _>>::import(Rsa, provider, &blob)
     }
 }
 
