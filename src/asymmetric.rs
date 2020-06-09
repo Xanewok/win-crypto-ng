@@ -343,6 +343,30 @@ impl AsymmetricKey<Rsa, Private> {
     }
 }
 
+impl AsymmetricKey<Ecdh<Curve25519>, Private> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, private: &[u8]) -> Result<Self> {
+        if private.len() != 32 {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPrivateBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC,
+            cbKey: 32
+        },
+        &EccKeyBlobPrivateTail {
+            x: &[0u8; 32],
+            y: &[0u8; 32],
+            d: private,
+        });
+
+        // let blob = Blob::<RsaKeyPrivateBlob>::clone_from_parts(&header, parts);
+
+        <Self as Import::<Ecdh<Curve25519>, Private>>::import(Ecdh(Curve25519), provider, &blob)
+    }
+}
+
+
+
 /// Attempts to export the key to a given blob type.
 ///
 /// # Example
