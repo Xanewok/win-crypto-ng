@@ -163,7 +163,7 @@ impl AsymmetricAlgorithm {
     /// ```
     pub fn id(&self) -> Result<AsymmetricAlgorithmId> {
         let name = self.handle.get_property_unsized::<AlgorithmName>()
-            .map(|name| WideCString::from_bytes_with_nul(name).to_string())?;
+            .map(|name| WideCString::from_bytes_with_nul(name).unwrap().to_string())?;
 
         AsymmetricAlgorithmId::try_from(name.as_str()).map_err(|_| crate::Error::InvalidHandle)
     }
