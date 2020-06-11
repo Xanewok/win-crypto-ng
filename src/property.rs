@@ -1,4 +1,4 @@
-//! Named properties for CNG objects.
+//! Named properties for CNG objects
 
 use core::ptr;
 use core::mem::{self, MaybeUninit};
