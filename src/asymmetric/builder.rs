@@ -1,7 +1,7 @@
 //! Type-safe builders to generate various asymmetric keys.
 
 use crate::key::ErasedKeyBlob;
-use crate::helpers::{Blob, WideCString};
+use crate::helpers::{Blob, Pod, WideCString};
 use crate::key::{BlobType};
 use crate::handle::{Handle, KeyHandle};
 use crate::{Error, Result};
@@ -527,6 +527,7 @@ impl KeyPairBuilder<'_> {
 
 use crate::blob;
 
+unsafe impl Pod for BCRYPT_DH_PARAMETER_HEADER {}
 blob! {
     enum DsaParameter {},
     header: BCRYPT_DSA_PARAMETER_HEADER,
@@ -538,6 +539,7 @@ blob! {
     }
 }
 
+unsafe impl Pod for BCRYPT_DSA_PARAMETER_HEADER_V2 {}
 blob! {
     enum DsaParameterV2 {},
     header: BCRYPT_DSA_PARAMETER_HEADER_V2,
@@ -549,6 +551,7 @@ blob! {
     }
 }
 
+unsafe impl Pod for BCRYPT_DSA_PARAMETER_HEADER {}
 blob! {
     enum DhParameter {},
     header: BCRYPT_DH_PARAMETER_HEADER,

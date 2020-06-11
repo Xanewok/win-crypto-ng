@@ -4,7 +4,7 @@ use core::ptr;
 use core::mem::{self, MaybeUninit};
 use crate::{Error, Result};
 use crate::handle::Handle;
-use crate::helpers::{FromBytes, WideCString};
+use crate::helpers::{FromBytes, Pod, WideCString};
 use winapi::shared::bcrypt::*;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::ntdef::{LPCWSTR, PUCHAR, ULONG, WCHAR};
@@ -91,6 +91,8 @@ pub trait Property {
     const IDENTIFIER: &'static str;
     type Value: FromBytes + ?Sized;
 }
+
+unsafe impl Pod for BCRYPT_KEY_LENGTHS_STRUCT {}
 
 /// [**BCRYPT_ALGORITHM_NAME**](https://docs.microsoft.com/windows/win32/seccng/cng-property-identifiers#BCRYPT_ALGORITHM_NAME)
 ///
