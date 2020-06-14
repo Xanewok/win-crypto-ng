@@ -3,7 +3,7 @@
 //! A scheme to verify the authenticity of digital messages or documents using
 //! asymmetric cryptography.
 
-use crate::asymmetric::{AsymmetricKey, Ecdsa, Public, Private, Rsa};
+use crate::asymmetric::{AsymmetricKey, Dsa, Ecdsa, Public, Private, Rsa};
 use crate::asymmetric::ecc::{NistP256, NistP384, NistP521};
 use crate::hash::HashAlgorithmId;
 use crate::helpers::WideCString;
@@ -60,6 +60,8 @@ macro_rules! impl_verify {
 
 impl_sign_verify!(AsymmetricKey<Rsa, Private>);
 impl_verify!(AsymmetricKey<Rsa, Public>);
+impl_sign_verify!(AsymmetricKey<Dsa, Private>);
+impl_verify!(AsymmetricKey<Dsa, Public>);
 impl_sign_verify!(AsymmetricKey<Ecdsa<NistP256>, Private>);
 impl_verify!(AsymmetricKey<Ecdsa<NistP256>, Public>);
 impl_sign_verify!(AsymmetricKey<Ecdsa<NistP384>, Private>);
