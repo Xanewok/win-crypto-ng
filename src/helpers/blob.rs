@@ -126,12 +126,12 @@ macro_rules! blob {
                 let align = std::mem::align_of_val(header);
                 let tail_padding = (align - (tail_len % align)) % align;
 
-                dbg!(header_len);
-                dbg!(tail_len);
-                dbg!(tail_padding);
+                // dbg!(header_len);
+                // dbg!(tail_len);
+                // dbg!(tail_padding);
 
                 let mut boxed = vec![0u8; header_len + tail_len + tail_padding].into_boxed_slice();
-                dbg!(boxed.len());
+                // dbg!(boxed.len());
 
                 let header_as_bytes = unsafe {
                     std::slice::from_raw_parts(
@@ -143,7 +143,7 @@ macro_rules! blob {
                 let mut offset = header_len;
                 $(
                     let field_len = blob! { size: header, $($len)*};
-                    dbg!(tail.$field, field_len);
+                    // dbg!(tail.$field, field_len);
                     &mut boxed[offset..offset + field_len].copy_from_slice(tail.$field);
                     offset += field_len;
                 )*
