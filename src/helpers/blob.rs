@@ -32,6 +32,10 @@ impl<'a, T: BlobLayout> Blob<T> {
         // to its first field will be aligned at least as `T::Header`.
         unsafe { &self.0 }
     }
+    // REMOVEME
+    pub fn header_mut(&mut self) -> &mut T::Header {
+        unsafe { &mut self.0 }
+    }// REMOVEME
 
     pub(crate) fn tail(&self) -> &[u8] {
         &self.1
@@ -118,19 +122,11 @@ macro_rules! blob {
                 let header_len = std::mem::size_of_val(header);
                 let tail_len: usize = 0 $( + blob! { size: header, $($len)*} )*;
 
-                // To err on the safe side, despite `Blob` being
-                // `#[repr(packed)]`, we pad the tail allocation as if it was
-                // a regular, padded struct.
-                // We assume that header is #[repr(C)] and that its alignment is
-                // the largest required alignment for its field.
-                let align = std::mem::align_of_val(header);
-                let tail_padding = (align - (tail_len % align)) % align;
-
                 // dbg!(header_len);
                 // dbg!(tail_len);
                 // dbg!(tail_padding);
 
-                let mut boxed = vec![0u8; header_len + tail_len + tail_padding].into_boxed_slice();
+                let mut boxed = vec![0u8; header_len + tail_len].into_boxed_slice();
                 // dbg!(boxed.len());
 
                 let header_as_bytes = unsafe {
