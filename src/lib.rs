@@ -6,6 +6,7 @@ use std::num::NonZeroU32;
 use std::fmt;
 
 // pub mod aead;
+pub mod agreement;
 pub mod asymmetric;
 pub mod buffer;
 pub mod handle;
