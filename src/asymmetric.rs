@@ -474,13 +474,14 @@ impl AsymmetricKey<Ecdsa<NistP521>, Public> {
 
 impl AsymmetricKey<Ecdh<Curve25519>, Private> {
     pub fn import_from_parts(provider: &AsymmetricAlgorithm, private: &[u8]) -> Result<Self> {
-        if private.len() != 32 {
+        let key_len = (Curve25519.key_bits() + 7) / 8;
+        if private.len() != key_len as usize {
             return Err(crate::Error::InvalidParameter);
         }
 
         let blob = Blob::<EccKeyPrivateBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
             dwMagic: BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC,
-            cbKey: 32
+            cbKey: key_len
         },
         &EccKeyBlobPrivateTail {
             x: &[0u8; 32],
@@ -492,7 +493,133 @@ impl AsymmetricKey<Ecdh<Curve25519>, Private> {
     }
 }
 
+impl AsymmetricKey<Ecdh<Curve25519>, Public> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, public: &[u8]) -> Result<Self> {
+        let key_len = (Curve25519.key_bits() + 7) / 8;
+        if public.len() != key_len as usize {
+            return Err(crate::Error::InvalidParameter);
+        }
 
+        let blob = Blob::<EccKeyPublicBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PUBLIC_GENERIC_MAGIC,
+            cbKey: key_len
+        },
+        &EccKeyBlobPublicTail {
+            x: public,
+            y: &[0u8; 32],
+        });
+
+        <Self as Import::<_, _>>::import(Ecdh(Curve25519), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP256>, Private> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPrivateTail) -> Result<Self> {
+        let key_len = NistP256.key_bits() / 8;
+        if [parts.x, parts.y, parts.d].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPrivateBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PRIVATE_P256_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP256), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP256>, Public> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPublicTail) -> Result<Self> {
+        let key_len = NistP256.key_bits() / 8;
+        if [parts.x, parts.y].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPublicBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PUBLIC_P256_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP256), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP384>, Private> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPrivateTail) -> Result<Self> {
+        let key_len = NistP384.key_bits() / 8;
+        if [parts.x, parts.y, parts.d].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPrivateBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PRIVATE_P384_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP384), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP384>, Public> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPublicTail) -> Result<Self> {
+        let key_len = NistP384.key_bits() / 8;
+        if [parts.x, parts.y].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPublicBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PUBLIC_P384_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP384), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP521>, Private> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPrivateTail) -> Result<Self> {
+        let key_len = (NistP521.key_bits() + 7) / 8;
+        if [parts.x, parts.y, parts.d].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPrivateBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PRIVATE_P521_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP521), provider, &blob)
+    }
+}
+
+impl AsymmetricKey<Ecdh<NistP521>, Public> {
+    pub fn import_from_parts(provider: &AsymmetricAlgorithm, parts: &EccKeyBlobPublicTail) -> Result<Self> {
+        let key_len = (NistP521.key_bits() + 7) / 8;
+        if [parts.x, parts.y].iter().any(|v| v.len() != key_len as usize) {
+            return Err(crate::Error::InvalidParameter);
+        }
+
+        let blob = Blob::<EccKeyPublicBlob>::clone_from_parts(&BCRYPT_ECCKEY_BLOB {
+            dwMagic: BCRYPT_ECDH_PUBLIC_P521_MAGIC,
+            cbKey: key_len
+        },
+        parts
+        );
+
+        <Self as Import::<_, _>>::import(Ecdh(NistP521), provider, &blob)
+    }
+}
 
 /// Attempts to export the key to a given blob type.
 ///
